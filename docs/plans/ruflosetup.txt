@@ -1,0 +1,28 @@
+ ● Alles aufgesetzt! Hier die Zusammenfassung:
+
+  Ruflo Setup komplett
+
+  ┌──────────────┬───────────────────────────────────────────────────────────┐
+  │  Komponente  │                          Status                           │
+  ├──────────────┼───────────────────────────────────────────────────────────┤
+  │ Workflow     │ workflow-1771589036094-ey3907 — 4 Sprint-Phasen           │
+  ├──────────────┼───────────────────────────────────────────────────────────┤
+  │ Tasks        │ 30 Arbeitspakete (A1–H3) mit Dependencies                 │
+  ├──────────────┼───────────────────────────────────────────────────────────┤
+  │ Intelligence │ Trajectory traj-1771589187788-8rusq8 — trackt Lernerfolge │
+  ├──────────────┼───────────────────────────────────────────────────────────┤
+  │ Session      │ nemesis-setup-complete — Restore-Point gesichert          │
+  ├──────────────┼───────────────────────────────────────────────────────────┤
+  │ Memory       │ Workflow-State + Task-ID-Mapping persistent               │
+  └──────────────┴───────────────────────────────────────────────────────────┘
+
+  So läuft es ab:
+
+  1. Pro Paket: Plan-Datei lesen → Ruflo Task auf in_progress → TDD implementieren → Tests grün → Ruflo Task completed → Trajectory-Step loggen → Session saven
+  2. Bei Crash: session_restore("nemesis-setup-complete") → weiter wo wir waren
+  3. Sprint 2+3: Parallele Tracks (B/C/D bzw. E/G) können mit dispatching-parallel-agents gleichzeitig laufen
+
+  Nächster Schritt:
+
+  Sprint 1, Paket A1 — Git + pyproject.toml + Package-Struktur (3 Tasks, Plan: 01a-setup-basics.md)
+
