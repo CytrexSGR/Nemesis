@@ -6,7 +6,7 @@ description = "Tree-sitter AST parser for Nemesis — Python extension via PyO3"
 
 [lib]
 name = "nemesis_parse"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module"] }
@@ -16,3 +16,4 @@ tree-sitter-typescript = "0.23"
 tree-sitter-rust = "0.23"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+thiserror = "1"
