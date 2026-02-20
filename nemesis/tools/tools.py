@@ -9,16 +9,21 @@ if TYPE_CHECKING:
     from nemesis.core.engine import NemesisEngine
 
 
-def search_code(engine: NemesisEngine, query: str, limit: int = 10) -> dict[str, Any]:
+def search_code(
+    engine: NemesisEngine, query: str, limit: int = 10, project: str | None = None
+) -> dict[str, Any]:
     """Search code using vector similarity + optional graph context.
 
     1. Embed the query text
     2. Search vector store for similar chunks
     3. For each result, optionally load the parent node from graph
     4. Return results with file, code, score, and node info
+
+    Args:
+        project: Optional project name to restrict search to.
     """
     embedding = engine.embedder.embed_single(query)
-    results = engine.vector_store.search(embedding, limit=limit)
+    results = engine.vector_store.search(embedding, limit=limit, project_id=project)
 
     items = []
     for r in results:
@@ -45,14 +50,24 @@ def search_code(engine: NemesisEngine, query: str, limit: int = 10) -> dict[str,
 
 
 def get_context(
-    engine: NemesisEngine, file_path: str, depth: int = 2
+    engine: NemesisEngine,
+    file_path: str,
+    depth: int = 2,
+    project: str | None = None,
 ) -> dict[str, Any]:
     """Get context for a file from the graph.
 
     1. Find all nodes for the file
     2. Traverse from each node to get related context
     3. Return structured context with nodes and relationships
+
+    Args:
+        project: Optional project name. Auto-resolved from file_path if not given.
     """
+    # Auto-resolve project from file path if not given.
+    # Currently used for context in return value; graph queries use
+    # prefixed node IDs so no explicit project filter is needed.
+    resolved_project = project or engine.registry.resolve(Path(file_path))
     nodes = engine.graph.get_nodes_for_file(file_path)
 
     context_nodes: list[dict[str, Any]] = []
@@ -87,6 +102,7 @@ def get_context(
 
     return {
         "file": file_path,
+        "project": resolved_project,
         "nodes": context_nodes,
         "related": unique_related,
         "node_count": len(context_nodes),
@@ -97,18 +113,34 @@ def index_project(
     engine: NemesisEngine,
     path: str,
     languages: list[str] | None = None,
+    name: str | None = None,
 ) -> dict[str, Any]:
     """Index a project directory.
 
     Uses the engine's pipeline to index all matching files.
+
+    Args:
+        name: Optional project name. Defaults to directory name.
     """
+    project_path = Path(path)
     langs = languages or engine.config.languages
+
+    # Register in registry
+    info = engine.registry.register(path=project_path, languages=langs, name=name)
+
     result = engine.pipeline.index_project(
-        Path(path),
+        project_path,
         languages=langs,
         ignore_dirs=set(engine.config.ignore_patterns),
+        project_id=info.name,
+        project_root=project_path,
     )
+
+    # Update registry stats
+    engine.registry.update_stats(info.name, result.files_indexed)
+
     return {
+        "project": info.name,
         "files_indexed": result.files_indexed,
         "nodes_created": result.nodes_created,
         "edges_created": result.edges_created,
@@ -124,15 +156,26 @@ def update_project(
     engine: NemesisEngine,
     path: str,
     languages: list[str] | None = None,
+    project: str | None = None,
 ) -> dict[str, Any]:
-    """Run a delta update on a project directory."""
+    """Run a delta update on a project directory.
+
+    Args:
+        project: Optional project name. Auto-resolved from path if not given.
+    """
+    project_path = Path(path)
     langs = languages or engine.config.languages
+    project_id = project or engine.registry.resolve(project_path) or project_path.name
+
     result = engine.pipeline.update_project(
-        Path(path),
+        project_path,
         languages=langs,
         ignore_dirs=set(engine.config.ignore_patterns),
+        project_id=project_id,
+        project_root=project_path,
     )
     return {
+        "project": project_id,
         "files_indexed": result.files_indexed,
         "nodes_created": result.nodes_created,
         "edges_created": result.edges_created,
@@ -140,6 +183,48 @@ def update_project(
         "errors": result.errors,
         "success": result.success,
     }
+
+
+def list_projects(engine: NemesisEngine) -> dict[str, Any]:
+    """List all registered projects."""
+    projects = engine.registry.list_projects()
+    return {
+        "projects": {
+            name: {
+                "path": str(info.path),
+                "languages": info.languages,
+                "indexed_at": info.indexed_at,
+                "files": info.files,
+            }
+            for name, info in projects.items()
+        },
+        "count": len(projects),
+    }
+
+
+def remove_project(engine: NemesisEngine, name: str) -> dict[str, Any]:
+    """Remove a project — unregister and delete data.
+
+    Deletes vector embeddings for the project and unregisters it.
+    Note: Graph nodes with project prefix are not yet cleaned up
+    (graph adapter lacks delete_by_project — tracked for future work).
+
+    Args:
+        name: Project name to remove.
+    """
+    info = engine.registry.get(name)
+    if info is None:
+        return {"error": f"Project '{name}' not found", "success": False}
+
+    # Delete from vector store
+    engine.vector_store.delete_by_project(name)
+
+    # TODO: Delete graph nodes with prefix "name::" when graph adapter supports it
+
+    # Unregister
+    engine.registry.unregister(name)
+
+    return {"project": name, "success": True}
 
 
 def remember_rule(

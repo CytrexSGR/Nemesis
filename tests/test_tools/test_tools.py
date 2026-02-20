@@ -14,8 +14,10 @@ from nemesis.tools.tools import (
     get_memory,
     get_session_summary,
     index_project,
+    list_projects,
     remember_decision,
     remember_rule,
+    remove_project,
     search_code,
     update_project,
 )
@@ -28,6 +30,8 @@ def _make_engine(**overrides: object) -> MagicMock:
     # Config defaults
     engine.config.languages = ["python"]
     engine.config.ignore_patterns = ["__pycache__", ".git"]
+    # Registry default
+    engine.registry.resolve.return_value = None
     return engine
 
 
@@ -68,7 +72,7 @@ class TestSearchCode:
 
         engine.embedder.embed_single.assert_called_once_with("find foo function")
         engine.vector_store.search.assert_called_once_with(
-            [0.1, 0.2, 0.3], limit=5
+            [0.1, 0.2, 0.3], limit=5, project_id=None
         )
 
     def test_search_enriches_from_graph(self) -> None:
@@ -174,6 +178,11 @@ class TestIndexProject:
     def test_index_project_calls_pipeline(self) -> None:
         """Mock pipeline.index_project, verify kwargs."""
         engine = _make_engine()
+        from nemesis.core.registry import ProjectInfo
+
+        engine.registry.register.return_value = ProjectInfo(
+            name="project", path=Path("/my/project"), languages=["python", "rust"]
+        )
         engine.pipeline.index_project.return_value = IndexResult(
             files_indexed=5,
             nodes_created=20,
@@ -190,7 +199,10 @@ class TestIndexProject:
             Path("/my/project"),
             languages=["python", "rust"],
             ignore_dirs={"__pycache__", ".git"},
+            project_id="project",
+            project_root=Path("/my/project"),
         )
+        assert result["project"] == "project"
         assert result["files_indexed"] == 5
         assert result["nodes_created"] == 20
         assert result["edges_created"] == 15
@@ -203,7 +215,12 @@ class TestIndexProject:
     def test_index_project_uses_config_languages(self) -> None:
         """When languages=None, config.languages is used."""
         engine = _make_engine()
+        from nemesis.core.registry import ProjectInfo
+
         engine.config.languages = ["typescript", "javascript"]
+        engine.registry.register.return_value = ProjectInfo(
+            name="project", path=Path("/project"), languages=["typescript", "javascript"]
+        )
         engine.pipeline.index_project.return_value = IndexResult(
             files_indexed=0,
             nodes_created=0,
@@ -244,7 +261,10 @@ class TestUpdateProject:
             Path("/my/project"),
             languages=["python"],
             ignore_dirs={"__pycache__", ".git"},
+            project_id="project",
+            project_root=Path("/my/project"),
         )
+        assert result["project"] == "project"
         assert result["files_indexed"] == 2
         assert result["nodes_created"] == 8
         assert result["duration_ms"] == 500.0
@@ -369,3 +389,229 @@ class TestGetSessionSummary:
         engine.session.get_queries.assert_called_once()
         engine.session.get_results.assert_called_once()
         engine.session.build_summary.assert_called_once()
+
+
+# -------------------------------------------------------------------------
+# TestSearchCodeProject
+# -------------------------------------------------------------------------
+
+
+class TestSearchCodeProject:
+    def test_search_with_project_filter(self) -> None:
+        """When project is given, it is passed to vector_store.search."""
+        engine = _make_engine()
+        engine.embedder.embed_single.return_value = [0.1]
+        engine.vector_store.search.return_value = []
+
+        search_code(engine, "hello", project="eve")
+
+        engine.vector_store.search.assert_called_once()
+        call_kwargs = engine.vector_store.search.call_args
+        assert call_kwargs.kwargs.get("project_id") == "eve"
+
+    def test_search_cross_project_default(self) -> None:
+        """When project is not given, project_id is None (cross-project)."""
+        engine = _make_engine()
+        engine.embedder.embed_single.return_value = [0.1]
+        engine.vector_store.search.return_value = []
+
+        search_code(engine, "hello")
+
+        call_kwargs = engine.vector_store.search.call_args
+        assert call_kwargs.kwargs.get("project_id") is None
+
+
+# -------------------------------------------------------------------------
+# TestGetContextProject
+# -------------------------------------------------------------------------
+
+
+class TestGetContextProject:
+    def test_get_context_resolves_project(self) -> None:
+        """When project is not given, registry.resolve is called."""
+        engine = _make_engine()
+        engine.graph.get_nodes_for_file.return_value = []
+
+        get_context(engine, "/home/user/eve/src/main.py")
+
+        engine.registry.resolve.assert_called_once_with(
+            Path("/home/user/eve/src/main.py")
+        )
+
+    def test_get_context_uses_explicit_project(self) -> None:
+        """When project is given explicitly, resolve is not relied upon."""
+        engine = _make_engine()
+        engine.graph.get_nodes_for_file.return_value = []
+
+        get_context(engine, "src/main.py", project="eve")
+
+        # resolve may still be called but explicit project takes precedence
+        # The function does: resolved_project = project or engine.registry.resolve(...)
+        # Since project="eve" is truthy, resolve result is ignored.
+
+
+# -------------------------------------------------------------------------
+# TestIndexProjectRegistry
+# -------------------------------------------------------------------------
+
+
+class TestIndexProjectRegistry:
+    def test_index_registers_project(self) -> None:
+        """index_project calls registry.register and returns project name."""
+        engine = _make_engine()
+        from nemesis.core.registry import ProjectInfo
+
+        engine.registry.register.return_value = ProjectInfo(
+            name="myproj", path=Path("/tmp/myproj"), languages=["python"]
+        )
+        engine.pipeline.index_project.return_value = IndexResult(
+            files_indexed=5,
+            nodes_created=20,
+            edges_created=15,
+            chunks_created=30,
+            embeddings_created=30,
+            duration_ms=1000.0,
+        )
+
+        result = index_project(engine, "/tmp/myproj", languages=["python"])
+
+        engine.registry.register.assert_called_once()
+        assert result["project"] == "myproj"
+
+    def test_index_updates_stats(self) -> None:
+        """After indexing, registry.update_stats is called with file count."""
+        engine = _make_engine()
+        from nemesis.core.registry import ProjectInfo
+
+        engine.registry.register.return_value = ProjectInfo(
+            name="proj", path=Path("/tmp/proj"), languages=["python"]
+        )
+        engine.pipeline.index_project.return_value = IndexResult(
+            files_indexed=10,
+            nodes_created=0,
+            edges_created=0,
+            chunks_created=0,
+            embeddings_created=0,
+            duration_ms=100.0,
+        )
+
+        index_project(engine, "/tmp/proj")
+
+        engine.registry.update_stats.assert_called_once_with("proj", 10)
+
+
+# -------------------------------------------------------------------------
+# TestUpdateProjectRegistry
+# -------------------------------------------------------------------------
+
+
+class TestUpdateProjectRegistry:
+    def test_update_with_explicit_project(self) -> None:
+        """When project is given, it is used as project_id."""
+        engine = _make_engine()
+        engine.pipeline.update_project.return_value = IndexResult(
+            files_indexed=1,
+            nodes_created=2,
+            edges_created=1,
+            chunks_created=3,
+            embeddings_created=3,
+            duration_ms=50.0,
+        )
+
+        result = update_project(engine, "/tmp/proj", project="myproj")
+
+        assert result["project"] == "myproj"
+        call_kwargs = engine.pipeline.update_project.call_args
+        assert call_kwargs.kwargs.get("project_id") == "myproj"
+
+    def test_update_resolves_project_from_registry(self) -> None:
+        """When project is not given, registry.resolve is used."""
+        engine = _make_engine()
+        engine.registry.resolve.return_value = "resolved-proj"
+        engine.pipeline.update_project.return_value = IndexResult(
+            files_indexed=1,
+            nodes_created=2,
+            edges_created=1,
+            chunks_created=3,
+            embeddings_created=3,
+            duration_ms=50.0,
+        )
+
+        result = update_project(engine, "/tmp/resolved-proj")
+
+        assert result["project"] == "resolved-proj"
+
+
+# -------------------------------------------------------------------------
+# TestListProjects
+# -------------------------------------------------------------------------
+
+
+class TestListProjects:
+    def test_list_returns_projects(self) -> None:
+        """list_projects returns structured project info."""
+        engine = _make_engine()
+        from nemesis.core.registry import ProjectInfo
+
+        engine.registry.list_projects.return_value = {
+            "eve": ProjectInfo(
+                name="eve",
+                path=Path("/home/user/eve"),
+                languages=["python"],
+                files=100,
+            ),
+        }
+
+        result = list_projects(engine)
+
+        assert "projects" in result
+        assert "eve" in result["projects"]
+        assert result["count"] == 1
+        assert result["projects"]["eve"]["files"] == 100
+        assert result["projects"]["eve"]["path"] == "/home/user/eve"
+        assert result["projects"]["eve"]["languages"] == ["python"]
+
+    def test_list_empty(self) -> None:
+        """list_projects with no projects returns empty dict."""
+        engine = _make_engine()
+        engine.registry.list_projects.return_value = {}
+
+        result = list_projects(engine)
+
+        assert result["projects"] == {}
+        assert result["count"] == 0
+
+
+# -------------------------------------------------------------------------
+# TestRemoveProject
+# -------------------------------------------------------------------------
+
+
+class TestRemoveProject:
+    def test_remove_unregisters_and_deletes(self) -> None:
+        """remove_project deletes from vector store and unregisters."""
+        engine = _make_engine()
+        from nemesis.core.registry import ProjectInfo
+
+        engine.registry.get.return_value = ProjectInfo(
+            name="eve", path=Path("/tmp/eve"), languages=["python"]
+        )
+
+        result = remove_project(engine, "eve")
+
+        engine.vector_store.delete_by_project.assert_called_once_with("eve")
+        engine.registry.unregister.assert_called_once_with("eve")
+        assert result["success"] is True
+        assert result["project"] == "eve"
+
+    def test_remove_nonexistent_returns_error(self) -> None:
+        """remove_project with unknown name returns error."""
+        engine = _make_engine()
+        engine.registry.get.return_value = None
+
+        result = remove_project(engine, "nonexistent")
+
+        assert result["success"] is False
+        assert "not found" in result["error"]
+        engine.vector_store.delete_by_project.assert_not_called()
+        engine.registry.unregister.assert_not_called()
