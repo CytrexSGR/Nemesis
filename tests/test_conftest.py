@@ -1,7 +1,5 @@
 """Tests for test infrastructure — verify fixtures work."""
 
-from pathlib import Path
-
 
 def test_tmp_project_fixture(tmp_project):
     """tmp_project fixture creates a temporary project directory."""

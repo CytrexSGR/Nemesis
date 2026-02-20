@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 
 def test_nemesis_version_consistency():
     """Version in __init__.py matches pyproject.toml."""
@@ -69,7 +67,16 @@ def test_pyproject_has_all_dependencies():
     deps = pyproject["project"]["dependencies"]
     dep_names = [d.split(">=")[0].split("[")[0].strip() for d in deps]
 
-    required = ["kuzu", "lancedb", "openai", "click", "pydantic", "pydantic-settings", "watchdog", "mcp"]
+    required = [
+        "kuzu",
+        "lancedb",
+        "openai",
+        "click",
+        "pydantic",
+        "pydantic-settings",
+        "watchdog",
+        "mcp",
+    ]
     for req in required:
         assert req in dep_names, f"Missing dependency: {req}"
 
@@ -90,7 +97,6 @@ def test_pyproject_dev_dependencies():
         assert req in dep_names, f"Missing dev dependency: {req}"
 
 
-@pytest.mark.xfail(reason="Cargo.toml wird in Paket A3 erstellt")
 def test_rust_crate_cargo_toml():
     """nemesis-parse/Cargo.toml exists and has correct package name."""
     import tomllib
