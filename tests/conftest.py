@@ -26,8 +26,7 @@ def nemesis_config(tmp_project: Path):
     from nemesis.core.config import NemesisConfig
 
     return NemesisConfig(
-        project_name="test-project",
-        project_root=tmp_project,
+        data_dir=tmp_project / ".nemesis",
         openai_api_key="sk-test-fake-key",
     )
 

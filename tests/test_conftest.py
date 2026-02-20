@@ -19,7 +19,7 @@ def test_nemesis_config_fixture(nemesis_config):
     from nemesis.core.config import NemesisConfig
 
     assert isinstance(nemesis_config, NemesisConfig)
-    assert nemesis_config.project_root.exists()
+    assert nemesis_config.data_dir.exists()
 
 
 def test_sample_python_file_fixture(sample_python_file):

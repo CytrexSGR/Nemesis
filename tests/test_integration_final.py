@@ -21,8 +21,7 @@ def _make_mock_engine(tmp_path):
     replaced with plain MagicMocks so tests never hit asyncio event loops.
     """
     config = NemesisConfig(
-        project_name="integration-test",
-        project_root=tmp_path,
+        data_dir=tmp_path,
         openai_api_key="sk-fake",
     )
 
@@ -222,7 +221,7 @@ class TestCLIWithMocks:
             mock_engine.__enter__ = MagicMock(return_value=mock_engine)
             mock_engine.__exit__ = MagicMock(return_value=False)
             mock_engine.pipeline.index_project.return_value = mock_result
-            mock_engine.config = NemesisConfig(project_root=tmp_path)
+            mock_engine.config = NemesisConfig(data_dir=tmp_path)
 
             # Index command
             result = runner.invoke(main, ["index", str(tmp_path)])
@@ -265,9 +264,9 @@ class TestServerToolRegistration:
         try:
             server = create_mcp_server(engine)
 
-            # The server has TOOL_DEFINITIONS with 8 entries
+            # The server has TOOL_DEFINITIONS with 10 entries
             expected_names = {td["name"] for td in TOOL_DEFINITIONS}
-            assert len(expected_names) == 8
+            assert len(expected_names) == 10
             assert expected_names == {
                 "search_code",
                 "get_context",
@@ -277,6 +276,8 @@ class TestServerToolRegistration:
                 "remember_decision",
                 "get_memory",
                 "get_session_summary",
+                "list_projects",
+                "remove_project",
             }
 
             # Verify the server object was created

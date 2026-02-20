@@ -39,7 +39,6 @@ def test_config_creates_with_defaults():
     from nemesis.core.config import NemesisConfig
 
     config = NemesisConfig()
-    assert config.project_name == "nemesis"
     assert config.graph_backend == "kuzu"
     assert config.vector_provider == "openai"
 
