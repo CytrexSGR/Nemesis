@@ -27,6 +27,7 @@ class MockCodeNode:
     start_line: int
     end_line: int
     source: str = ""
+    file: str = ""
 
 
 @dataclass
@@ -714,3 +715,197 @@ class TestUpdateProject:
         assert result.files_indexed >= 1
         # Parser nicht aufgerufen (nur Loeschung)
         parser.parse_file.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Task 4 (Multi-Project): project_id Prefix und relative Pfade
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineProjectId:
+    def test_index_file_prefixes_node_ids(self, tmp_path: Path):
+        """Node IDs get project_id:: prefix."""
+        source_code = "def hello():\n    return 42\n"
+        test_file = tmp_path / "hello.py"
+        test_file.write_text(source_code)
+
+        node = MockCodeNode(
+            id="func:hello.py:hello:1",
+            node_type="function",
+            name="hello",
+            start_line=1,
+            end_line=2,
+            source=source_code,
+        )
+        edge = MockEdge(
+            source_id="file:hello.py",
+            target_id="func:hello.py:hello:1",
+            kind="CONTAINS",
+        )
+        parse_result = MockParseResult(nodes=[node], edges=[edge])
+
+        parser = _make_mock_parser(parse_result)
+        graph = _make_mock_graph()
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+        result = pipeline.index_file(test_file, project_id="eve", project_root=tmp_path)
+
+        # Check node IDs are prefixed
+        node_call = graph.add_node.call_args[0][0]
+        assert node_call.id.startswith("eve::"), f"Node ID missing prefix: {node_call.id}"
+
+        # Check edge IDs are prefixed
+        edge_call = graph.add_edge.call_args[0][0]
+        assert edge_call.source_id.startswith("eve::"), (
+            f"Edge source missing prefix: {edge_call.source_id}"
+        )
+        assert edge_call.target_id.startswith("eve::"), (
+            f"Edge target missing prefix: {edge_call.target_id}"
+        )
+
+    def test_index_file_uses_relative_paths(self, tmp_path: Path):
+        """File paths stored in graph are relative to project_root."""
+        sub = tmp_path / "services"
+        sub.mkdir()
+        test_file = sub / "main.py"
+        source_code = "x = 1\n"
+        test_file.write_text(source_code)
+
+        node = MockCodeNode(
+            id="var:main.py:x:1",
+            node_type="variable",
+            name="x",
+            start_line=1,
+            end_line=1,
+            source=source_code,
+        )
+        # The node.file field is set by the parser to the absolute path
+        node.file = str(test_file)
+        parse_result = MockParseResult(nodes=[node], edges=[])
+
+        parser = _make_mock_parser(parse_result)
+        graph = _make_mock_graph()
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+        result = pipeline.index_file(test_file, project_id="eve", project_root=tmp_path)
+
+        node_call = graph.add_node.call_args[0][0]
+        # MockCodeNode wird direkt durchgereicht — pruefe node.file
+        assert not node_call.file.startswith("/"), f"Path should be relative: {node_call.file}"
+        assert node_call.file == "services/main.py"
+
+    def test_index_file_passes_project_id_to_vector_store(self, tmp_path: Path):
+        """project_id is passed to vector_store.add()."""
+        source_code = "def fn():\n    pass\n"
+        test_file = tmp_path / "fn.py"
+        test_file.write_text(source_code)
+
+        node = MockCodeNode(
+            id="func:fn.py:fn:1",
+            node_type="function",
+            name="fn",
+            start_line=1,
+            end_line=2,
+            source=source_code,
+        )
+        parse_result = MockParseResult(nodes=[node], edges=[])
+
+        parser = _make_mock_parser(parse_result)
+        graph = _make_mock_graph()
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+        pipeline.index_file(test_file, project_id="eve", project_root=tmp_path)
+
+        # vector_store.add was called with project_id
+        vector_store.add.assert_called_once()
+        call_kwargs = vector_store.add.call_args
+        # Could be positional or keyword — check both
+        assert call_kwargs.kwargs.get("project_id") == "eve" or (
+            len(call_kwargs.args) > 4 and call_kwargs.args[4] == "eve"
+        )
+
+    def test_index_file_without_project_id_works(self, tmp_path: Path):
+        """Backward compatible — no project_id means no prefix."""
+        source_code = "def hello():\n    return 42\n"
+        test_file = tmp_path / "hello.py"
+        test_file.write_text(source_code)
+
+        node = MockCodeNode(
+            id="func:hello.py:hello:1",
+            node_type="function",
+            name="hello",
+            start_line=1,
+            end_line=2,
+            source=source_code,
+        )
+        parse_result = MockParseResult(nodes=[node], edges=[])
+
+        parser = _make_mock_parser(parse_result)
+        graph = _make_mock_graph()
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+        result = pipeline.index_file(test_file)
+
+        node_call = graph.add_node.call_args[0][0]
+        assert not node_call.id.startswith("::"), "No prefix when project_id is empty"
+
+    def test_index_project_passes_project_id(self, tmp_path: Path):
+        """index_project passes project_id and project_root to index_file."""
+        (tmp_path / "a.py").write_text("x = 1\n")
+
+        node = MockCodeNode(
+            id="v-1",
+            node_type="variable",
+            name="x",
+            start_line=1,
+            end_line=1,
+            source="x = 1\n",
+        )
+        parse_result = MockParseResult(nodes=[node], edges=[])
+
+        parser = _make_mock_parser(parse_result)
+        graph = _make_mock_graph()
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+        result = pipeline.index_project(
+            tmp_path, languages=["python"], project_id="myproj", project_root=tmp_path,
+        )
+
+        # Node should have prefix
+        node_call = graph.add_node.call_args[0][0]
+        assert node_call.id.startswith("myproj::"), f"Node ID missing prefix: {node_call.id}"

@@ -26,6 +26,17 @@ if TYPE_CHECKING:
     from nemesis.vector.store import VectorStore
 
 
+def _prefix_id(project_id: str, original_id: str) -> str:
+    """Add project prefix to a node/edge ID.
+
+    When *project_id* is empty the original ID is returned unchanged,
+    keeping the pipeline fully backward-compatible.
+    """
+    if project_id and not original_id.startswith(f"{project_id}::"):
+        return f"{project_id}::{original_id}"
+    return original_id
+
+
 def _to_node_data(node: CodeNode | NodeData | Any) -> NodeData | Any:
     """Convert a CodeNode to NodeData for the graph adapter. Pass others through."""
     if isinstance(node, CodeNode):
@@ -95,7 +106,12 @@ class IndexingPipeline:
         if self.on_progress is not None:
             self.on_progress(step, detail)
 
-    def index_file(self, path: Path) -> IndexResult:
+    def index_file(
+        self,
+        path: Path,
+        project_id: str = "",
+        project_root: Path | None = None,
+    ) -> IndexResult:
         """Indexiert eine einzelne Datei.
 
         Ablauf: Parse -> Knoten/Kanten speichern -> Chunken ->
@@ -103,6 +119,11 @@ class IndexingPipeline:
 
         Args:
             path: Pfad zur zu indexierenden Datei.
+            project_id: Optionale Projekt-ID fuer Multi-Projekt-Support.
+                Wenn angegeben, werden alle Node/Edge IDs mit
+                ``project_id::`` geprefixed.
+            project_root: Wurzelverzeichnis des Projekts. Wenn angegeben,
+                werden Dateipfade relativ zu diesem Verzeichnis gespeichert.
 
         Returns:
             IndexResult mit Statistiken und ggf. Fehlern.
@@ -114,10 +135,24 @@ class IndexingPipeline:
         chunks_created = 0
         embeddings_created = 0
 
+        # Relativen Pfad berechnen (falls project_root gesetzt)
+        rel_path = path.relative_to(project_root) if project_root else path
+
         try:
             # 1. Parse
             self._notify("parse", str(path))
             parse_result = self.parser.parse_file(str(path))
+
+            # 1b. Project-ID Prefix und relative Pfade anwenden
+            for node in parse_result.nodes:
+                node.id = _prefix_id(project_id, node.id)
+                if project_root and hasattr(node, "file"):
+                    node.file = str(rel_path)
+            for edge in parse_result.edges:
+                edge.source_id = _prefix_id(project_id, edge.source_id)
+                edge.target_id = _prefix_id(project_id, edge.target_id)
+                if project_root and hasattr(edge, "file"):
+                    edge.file = str(rel_path)
 
             # 2. Knoten im Graph speichern
             self._notify("store_nodes", f"{len(parse_result.nodes)} nodes")
@@ -165,7 +200,7 @@ class IndexingPipeline:
                     ids = [c.id for c in all_chunks]
                     metadata = [
                         {
-                            "file": str(path),
+                            "file": str(rel_path) if project_root else str(path),
                             "parent_node_id": c.parent_node_id,
                             "parent_type": c.parent_type,
                             "start_line": c.start_line,
@@ -173,7 +208,10 @@ class IndexingPipeline:
                         }
                         for c in all_chunks
                     ]
-                    self.vector_store.add(ids, texts, embeddings, metadata)
+                    self.vector_store.add(
+                        ids, texts, embeddings, metadata,
+                        project_id=project_id,
+                    )
                     embeddings_created = len(all_chunks)
                 except Exception as e:
                     errors.append(f"embedding/store failed: {e}")
@@ -192,7 +230,12 @@ class IndexingPipeline:
             errors=errors,
         )
 
-    def reindex_file(self, path: Path) -> IndexResult:
+    def reindex_file(
+        self,
+        path: Path,
+        project_id: str = "",
+        project_root: Path | None = None,
+    ) -> IndexResult:
         """Re-indexiert eine Datei (Delta Update).
 
         Loescht zuerst alle alten Daten der Datei aus Graph und
@@ -200,6 +243,8 @@ class IndexingPipeline:
 
         Args:
             path: Pfad zur zu re-indexierenden Datei.
+            project_id: Optionale Projekt-ID (weitergereicht an index_file).
+            project_root: Optionales Wurzelverzeichnis (weitergereicht an index_file).
 
         Returns:
             IndexResult mit Statistiken und ggf. Fehlern.
@@ -227,7 +272,7 @@ class IndexingPipeline:
             )
 
         # Neu-Indexierung
-        return self.index_file(path)
+        return self.index_file(path, project_id=project_id, project_root=project_root)
 
     # ------------------------------------------------------------------
     # Task 9: Full Project Index
@@ -238,6 +283,8 @@ class IndexingPipeline:
         path: Path,
         languages: list[str],
         ignore_dirs: set[str] | None = None,
+        project_id: str = "",
+        project_root: Path | None = None,
     ) -> IndexResult:
         """Indexiert ein gesamtes Projekt.
 
@@ -249,6 +296,9 @@ class IndexingPipeline:
             path: Wurzelverzeichnis des Projekts.
             languages: Liste von Sprachen (z.B. ``["python"]``).
             ignore_dirs: Zusaetzliche Verzeichnisnamen zum Ignorieren.
+            project_id: Optionale Projekt-ID fuer Multi-Projekt-Support.
+            project_root: Wurzelverzeichnis fuer relative Pfade.
+                Wenn nicht angegeben, wird *path* verwendet.
 
         Returns:
             Aggregiertes IndexResult ueber alle Dateien.
@@ -257,6 +307,8 @@ class IndexingPipeline:
         effective_ignore = DEFAULT_IGNORE_DIRS | (ignore_dirs or set())
         extensions = _get_extensions(languages)
         files = _collect_code_files(Path(path), extensions, effective_ignore)
+
+        effective_root = project_root or path
 
         total_files_indexed = 0
         total_nodes = 0
@@ -271,7 +323,11 @@ class IndexingPipeline:
                 f"[{i + 1}/{len(files)}] {file_path}",
             )
             try:
-                result = self.index_file(file_path)
+                result = self.index_file(
+                    file_path,
+                    project_id=project_id,
+                    project_root=effective_root,
+                )
                 total_files_indexed += result.files_indexed
                 total_nodes += result.nodes_created
                 total_edges += result.edges_created
@@ -301,6 +357,8 @@ class IndexingPipeline:
         path: Path,
         languages: list[str],
         ignore_dirs: set[str] | None = None,
+        project_id: str = "",
+        project_root: Path | None = None,
     ) -> IndexResult:
         """Fuehrt ein Delta-Update fuer ein Projekt durch.
 
@@ -311,6 +369,9 @@ class IndexingPipeline:
             path: Wurzelverzeichnis des Projekts.
             languages: Liste von Sprachen.
             ignore_dirs: Zusaetzliche Verzeichnisnamen zum Ignorieren.
+            project_id: Optionale Projekt-ID fuer Multi-Projekt-Support.
+            project_root: Wurzelverzeichnis fuer relative Pfade.
+                Wenn nicht angegeben, wird *path* verwendet.
 
         Returns:
             Aggregiertes IndexResult ueber alle Aenderungen.
@@ -322,6 +383,8 @@ class IndexingPipeline:
             languages,
             ignore_dirs,
         )
+
+        effective_root = project_root or path
 
         total_files_indexed = 0
         total_nodes = 0
@@ -344,7 +407,11 @@ class IndexingPipeline:
                     )
                     total_files_indexed += 1
                 elif change.change_type == ChangeType.MODIFIED:
-                    result = self.reindex_file(change.path)
+                    result = self.reindex_file(
+                        change.path,
+                        project_id=project_id,
+                        project_root=effective_root,
+                    )
                     total_files_indexed += result.files_indexed
                     total_nodes += result.nodes_created
                     total_edges += result.edges_created
@@ -352,7 +419,11 @@ class IndexingPipeline:
                     total_embeddings += result.embeddings_created
                     all_errors.extend(result.errors)
                 elif change.change_type == ChangeType.ADDED:
-                    result = self.index_file(change.path)
+                    result = self.index_file(
+                        change.path,
+                        project_id=project_id,
+                        project_root=effective_root,
+                    )
                     total_files_indexed += result.files_indexed
                     total_nodes += result.nodes_created
                     total_edges += result.edges_created
