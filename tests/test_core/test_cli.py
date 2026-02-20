@@ -260,16 +260,19 @@ class TestServeCommand:
     def test_serve_default(self):
         """serve command output mentions MCP server and stdio transport."""
         runner = CliRunner()
-        result = runner.invoke(main, ["serve"])
+        with patch("nemesis.core.server.run_stdio_server", return_value=None):
+            with patch("asyncio.run", return_value=None):
+                result = runner.invoke(main, ["serve"])
 
         assert result.exit_code == 0
         assert "MCP server" in result.output
         assert "stdio" in result.output
 
-    def test_serve_placeholder_message(self):
-        """serve command mentions that MCP server is not yet implemented."""
+    def test_serve_calls_run_stdio_server(self):
+        """serve command calls asyncio.run with run_stdio_server."""
         runner = CliRunner()
-        result = runner.invoke(main, ["serve"])
+        with patch("asyncio.run") as mock_run:
+            result = runner.invoke(main, ["serve"])
 
         assert result.exit_code == 0
-        assert "not yet implemented" in result.output
+        mock_run.assert_called_once()

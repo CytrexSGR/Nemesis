@@ -156,8 +156,12 @@ def watch(path: str, languages: tuple[str, ...]) -> None:
 )
 def serve(transport: str) -> None:
     """Start the MCP server."""
+    import asyncio
+
+    from nemesis.core.server import run_stdio_server
+
     click.echo(f"Starting Nemesis MCP server ({transport} transport)...")
-    click.echo("MCP server not yet implemented.")
+    asyncio.run(run_stdio_server())
 
 
 if __name__ == "__main__":
