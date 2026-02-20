@@ -7,6 +7,7 @@ from typing import Any
 
 from nemesis.core.config import NemesisConfig
 from nemesis.core.hooks import HookManager
+from nemesis.core.registry import ProjectRegistry
 from nemesis.graph import create_graph_adapter
 from nemesis.indexer.pipeline import IndexingPipeline
 from nemesis.memory.context import SessionContext
@@ -120,6 +121,7 @@ class NemesisEngine:
         self._decisions = None
         self._conventions = None
         self._hooks = None
+        self._registry = None
         self._initialized = False
 
     def initialize(self) -> None:
@@ -130,7 +132,7 @@ class NemesisEngine:
         cfg = self.config
 
         # Graph
-        graph_kwargs: dict[str, Any] = {"db_path": str(cfg.project_root / cfg.graph_path)}
+        graph_kwargs: dict[str, Any] = {"db_path": str(cfg.graph_dir)}
         if cfg.graph_backend == "neo4j":
             graph_kwargs = {
                 "uri": cfg.neo4j_uri,
@@ -144,7 +146,7 @@ class NemesisEngine:
         )
 
         # Vector Store (async -> sync wrapped)
-        raw_store = VectorStore(path=str(cfg.project_root / cfg.vector_path))
+        raw_store = VectorStore(path=str(cfg.vector_dir))
         self._vector_store = SyncVectorStoreWrapper(raw_store)
 
         # Embedder (async -> sync wrapped)
@@ -182,6 +184,9 @@ class NemesisEngine:
 
         # Hooks
         self._hooks = HookManager()
+
+        # Registry
+        self._registry = ProjectRegistry(cfg.registry_path)
 
         self._initialized = True
 
@@ -234,6 +239,11 @@ class NemesisEngine:
     def hooks(self):
         self._ensure_initialized()
         return self._hooks
+
+    @property
+    def registry(self):
+        self._ensure_initialized()
+        return self._registry
 
     def _ensure_initialized(self) -> None:
         if not self._initialized:

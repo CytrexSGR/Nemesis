@@ -165,13 +165,15 @@ class TestNemesisEngine:
         """Engine creates with default NemesisConfig when none given."""
         engine = NemesisEngine()
         assert isinstance(engine.config, NemesisConfig)
-        assert engine.config.project_name == "nemesis"
+        assert str(engine.config.data_dir).endswith(".nemesis")
 
     def test_custom_config(self):
         """Engine uses the provided config."""
-        cfg = NemesisConfig(project_name="custom")
+        from pathlib import Path
+
+        cfg = NemesisConfig(data_dir=Path("/tmp/custom-nemesis"))
         engine = NemesisEngine(config=cfg)
-        assert engine.config.project_name == "custom"
+        assert engine.config.data_dir == Path("/tmp/custom-nemesis")
 
     def test_not_initialized_raises(self):
         """Accessing properties before initialize() raises RuntimeError."""
@@ -186,11 +188,13 @@ class TestNemesisEngine:
             "rules",
             "decisions",
             "conventions",
+            "registry",
         ]
         for prop_name in properties:
             with pytest.raises(RuntimeError, match="not initialized"):
                 getattr(engine, prop_name)
 
+    @patch("nemesis.core.engine.ProjectRegistry")
     @patch("nemesis.core.engine.ConventionManager")
     @patch("nemesis.core.engine.DecisionsManager")
     @patch("nemesis.core.engine.RulesManager")
@@ -213,6 +217,7 @@ class TestNemesisEngine:
         mock_rules,
         mock_decisions,
         mock_conventions,
+        mock_registry,
     ):
         """After initialize(), all properties are available."""
         mock_graph_adapter.return_value = MagicMock()
@@ -233,13 +238,16 @@ class TestNemesisEngine:
         assert engine.rules is not None
         assert engine.decisions is not None
         assert engine.conventions is not None
+        assert engine.registry is not None
 
         mock_graph_adapter.assert_called_once()
         mock_vector_store.assert_called_once()
         mock_embed_provider.assert_called_once()
         mock_parser.assert_called_once()
         mock_pipeline.assert_called_once()
+        mock_registry.assert_called_once()
 
+    @patch("nemesis.core.engine.ProjectRegistry")
     @patch("nemesis.core.engine.ConventionManager")
     @patch("nemesis.core.engine.DecisionsManager")
     @patch("nemesis.core.engine.RulesManager")
@@ -262,6 +270,7 @@ class TestNemesisEngine:
         mock_rules,
         mock_decisions,
         mock_conventions,
+        _mock_registry,
     ):
         """Context manager calls initialize on enter and close on exit."""
         mock_graph = MagicMock()
@@ -275,6 +284,7 @@ class TestNemesisEngine:
 
         assert engine._initialized is False
 
+    @patch("nemesis.core.engine.ProjectRegistry")
     @patch("nemesis.core.engine.ConventionManager")
     @patch("nemesis.core.engine.DecisionsManager")
     @patch("nemesis.core.engine.RulesManager")
@@ -297,6 +307,7 @@ class TestNemesisEngine:
         mock_rules,
         mock_decisions,
         mock_conventions,
+        _mock_registry,
     ):
         """After close(), initialized is False and graph.close() is called."""
         mock_graph = MagicMock()
@@ -312,6 +323,7 @@ class TestNemesisEngine:
         assert engine._initialized is False
         mock_graph.close.assert_called_once()
 
+    @patch("nemesis.core.engine.ProjectRegistry")
     @patch("nemesis.core.engine.ConventionManager")
     @patch("nemesis.core.engine.DecisionsManager")
     @patch("nemesis.core.engine.RulesManager")
@@ -334,6 +346,7 @@ class TestNemesisEngine:
         mock_rules,
         mock_decisions,
         mock_conventions,
+        _mock_registry,
     ):
         """Calling initialize() twice is idempotent -- no second setup."""
         mock_graph_adapter.return_value = MagicMock()
@@ -349,6 +362,7 @@ class TestNemesisEngine:
         mock_vector_store.assert_called_once()
         mock_embed_provider.assert_called_once()
 
+    @patch("nemesis.core.engine.ProjectRegistry")
     @patch("nemesis.core.engine.ConventionManager")
     @patch("nemesis.core.engine.DecisionsManager")
     @patch("nemesis.core.engine.RulesManager")
@@ -371,6 +385,7 @@ class TestNemesisEngine:
         mock_rules,
         mock_decisions,
         mock_conventions,
+        _mock_registry,
     ):
         """Neo4j backend passes URI/user/password to create_graph_adapter."""
         mock_graph_adapter.return_value = MagicMock()
@@ -395,6 +410,7 @@ class TestNemesisEngine:
         )
         engine.close()
 
+    @patch("nemesis.core.engine.ProjectRegistry")
     @patch("nemesis.core.engine.ConventionManager")
     @patch("nemesis.core.engine.DecisionsManager")
     @patch("nemesis.core.engine.RulesManager")
@@ -417,6 +433,7 @@ class TestNemesisEngine:
         mock_rules,
         mock_decisions,
         mock_conventions,
+        _mock_registry,
     ):
         """OpenAI embedding provider receives AsyncOpenAI client and model."""
         mock_graph_adapter.return_value = MagicMock()
@@ -439,4 +456,41 @@ class TestNemesisEngine:
             client=mock_client_instance,
             model="text-embedding-3-large",
         )
+        engine.close()
+
+    @patch("nemesis.core.engine.ProjectRegistry")
+    @patch("nemesis.core.engine.ConventionManager")
+    @patch("nemesis.core.engine.DecisionsManager")
+    @patch("nemesis.core.engine.RulesManager")
+    @patch("nemesis.core.engine.SessionContext")
+    @patch("nemesis.core.engine.IndexingPipeline")
+    @patch("nemesis.core.engine.ParserBridge")
+    @patch("nemesis.core.engine.create_embedding_provider")
+    @patch("nemesis.core.engine.VectorStore")
+    @patch("nemesis.core.engine.create_graph_adapter")
+    @patch("openai.AsyncOpenAI")
+    def test_engine_has_registry(
+        self,
+        _mock_openai_client,
+        mock_graph_adapter,
+        mock_vector_store,
+        mock_embed_provider,
+        _mock_parser,
+        _mock_pipeline,
+        _mock_session,
+        _mock_rules,
+        _mock_decisions,
+        _mock_conventions,
+        mock_registry,
+    ):
+        """After initialize(), engine.registry is a ProjectRegistry instance."""
+        mock_graph_adapter.return_value = MagicMock()
+        mock_vector_store.return_value = AsyncMock()
+        mock_embed_provider.return_value = AsyncMock()
+
+        engine = NemesisEngine()
+        engine.initialize()
+
+        assert engine.registry is not None
+        mock_registry.assert_called_once_with(engine.config.registry_path)
         engine.close()
