@@ -96,6 +96,9 @@ class SyncVectorStoreWrapper:
     def count(self) -> int:
         return self._get_loop().run_until_complete(self._store.count())
 
+    def optimize(self) -> None:
+        return self._get_loop().run_until_complete(self._store.optimize())
+
     def close(self) -> None:
         self._get_loop().run_until_complete(self._store.close())
         if self._loop and not self._loop.is_closed():

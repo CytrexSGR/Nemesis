@@ -47,6 +47,9 @@ def _to_node_data(node: CodeNode | NodeData | Any) -> NodeData | Any:
             "line_end": node.line_end,
             "language": node.language,
         }
+        # File nodes use "path" instead of "file" in the graph schema.
+        if node.kind == "File":
+            props["path"] = node.file
         if node.docstring:
             props["docstring"] = node.docstring
         if node.signature:
@@ -312,6 +315,15 @@ class IndexingPipeline:
 
         effective_root = project_root or path
 
+        # Alte Vektor-Daten loeschen falls bereits indexiert (Duplikat-Vermeidung).
+        # Graph nutzt MERGE (Upsert) und hat keine Duplikate.
+        if project_id:
+            try:
+                self.vector_store.delete_by_project(project_id)
+                self._notify("cleanup", f"cleared old embeddings for {project_id}")
+            except Exception:
+                pass
+
         total_files_indexed = 0
         total_nodes = 0
         total_edges = 0
@@ -338,6 +350,13 @@ class IndexingPipeline:
                 all_errors.extend(result.errors)
             except Exception as e:
                 all_errors.append(f"index_project failed for {file_path}: {e}")
+
+        # Auto-Kompaktierung der Vektor-DB
+        try:
+            self._notify("optimize", "compacting vector store")
+            self.vector_store.optimize()
+        except Exception as e:
+            all_errors.append(f"vector store optimize failed: {e}")
 
         elapsed_ms = (time.monotonic() - start) * 1000
         return IndexResult(
@@ -436,6 +455,14 @@ class IndexingPipeline:
                     all_errors.extend(result.errors)
             except Exception as e:
                 all_errors.append(f"update_project failed for {change.path}: {e}")
+
+        # Auto-Kompaktierung der Vektor-DB
+        if changes:
+            try:
+                self._notify("optimize", "compacting vector store")
+                self.vector_store.optimize()
+            except Exception as e:
+                all_errors.append(f"vector store optimize failed: {e}")
 
         elapsed_ms = (time.monotonic() - start) * 1000
         return IndexResult(

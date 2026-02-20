@@ -131,7 +131,7 @@ class TestGetContext:
             NodeData(
                 id="node-1",
                 node_type="Function",
-                properties={"name": "foo", "start_line": 1, "end_line": 10},
+                properties={"name": "foo", "line_start": 1, "line_end": 10},
             ),
         ]
         engine.graph.get_neighbors.return_value = []
@@ -144,6 +144,8 @@ class TestGetContext:
         assert result["nodes"][0]["id"] == "node-1"
         assert result["nodes"][0]["type"] == "Function"
         assert result["nodes"][0]["name"] == "foo"
+        assert result["nodes"][0]["start_line"] == 1
+        assert result["nodes"][0]["end_line"] == 10
         assert result["related"] == []
 
     def test_get_context_deduplicates_related(self) -> None:
@@ -448,6 +450,22 @@ class TestGetContextProject:
         # resolve may still be called but explicit project takes precedence
         # The function does: resolved_project = project or engine.registry.resolve(...)
         # Since project="eve" is truthy, resolve result is ignored.
+
+    def test_get_context_normalizes_absolute_path(self) -> None:
+        """Absolute paths are converted to relative using project root."""
+        engine = _make_engine()
+        from nemesis.core.registry import ProjectInfo
+
+        engine.registry.resolve.return_value = "eve"
+        engine.registry.get.return_value = ProjectInfo(
+            name="eve", path=Path("/home/user/eve"), languages=["python"]
+        )
+        engine.graph.get_nodes_for_file.return_value = []
+
+        get_context(engine, "/home/user/eve/src/main.py")
+
+        # Graph should be queried with relative path, not absolute
+        engine.graph.get_nodes_for_file.assert_called_once_with("src/main.py")
 
 
 # -------------------------------------------------------------------------

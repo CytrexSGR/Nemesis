@@ -68,7 +68,19 @@ def get_context(
     # Currently used for context in return value; graph queries use
     # prefixed node IDs so no explicit project filter is needed.
     resolved_project = project or engine.registry.resolve(Path(file_path))
-    nodes = engine.graph.get_nodes_for_file(file_path)
+
+    # Normalize: if absolute path given, try converting to relative path
+    # (graph stores relative paths when project_root is set during indexing).
+    lookup_path = file_path
+    if resolved_project and Path(file_path).is_absolute():
+        info = engine.registry.get(resolved_project)
+        if info is not None:
+            try:
+                lookup_path = str(Path(file_path).relative_to(info.path))
+            except ValueError:
+                pass  # not under project root, use as-is
+
+    nodes = engine.graph.get_nodes_for_file(lookup_path)
 
     context_nodes: list[dict[str, Any]] = []
     related: list[dict[str, Any]] = []
@@ -78,8 +90,8 @@ def get_context(
             "id": node.id,
             "type": node.node_type,
             "name": node.properties.get("name", ""),
-            "start_line": node.properties.get("start_line"),
-            "end_line": node.properties.get("end_line"),
+            "start_line": node.properties.get("line_start"),
+            "end_line": node.properties.get("line_end"),
         })
 
         # Get neighbors for context

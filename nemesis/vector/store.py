@@ -203,7 +203,7 @@ class VectorStore:
             return []
 
         def _search() -> list[dict]:
-            query = self._table.search(query_embedding).limit(limit)
+            query = self._table.search(query_embedding).metric("cosine").limit(limit)
 
             conditions = []
 
@@ -294,6 +294,18 @@ class VectorStore:
         where = f"metadata LIKE '%{escaped}%'"
 
         await loop.run_in_executor(None, lambda: self._table.delete(where))
+
+    async def optimize(self) -> None:
+        """Compact and clean up the vector store.
+
+        Merges small data fragments and removes old versions to reduce
+        disk usage. Should be called after bulk add/delete operations.
+        """
+        if not self._initialized or self._table is None:
+            return
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: self._table.optimize())
 
     async def close(self) -> None:
         """Close the vector store and release resources."""
