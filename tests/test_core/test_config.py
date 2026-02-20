@@ -10,8 +10,6 @@ def test_config_default_values():
     from nemesis.core.config import NemesisConfig
 
     config = NemesisConfig()
-    assert config.project_name == "nemesis"
-    assert config.project_root == Path(".")
     assert config.languages == ["python"]
     assert config.ignore_patterns == [
         "node_modules",
@@ -31,7 +29,6 @@ def test_config_graph_defaults():
 
     config = NemesisConfig()
     assert config.graph_backend == "kuzu"
-    assert config.graph_path == Path(".nemesis/graph")
 
 
 def test_config_vector_defaults():
@@ -41,7 +38,6 @@ def test_config_vector_defaults():
     config = NemesisConfig()
     assert config.vector_provider == "openai"
     assert config.vector_model == "text-embedding-3-small"
-    assert config.vector_path == Path(".nemesis/vectors")
 
 
 def test_config_memory_defaults():
@@ -74,12 +70,10 @@ def test_config_env_override(monkeypatch):
     """Config values can be overridden via NEMESIS_ prefixed env vars."""
     from nemesis.core.config import NemesisConfig
 
-    monkeypatch.setenv("NEMESIS_PROJECT_NAME", "my-project")
     monkeypatch.setenv("NEMESIS_GRAPH_BACKEND", "neo4j")
     monkeypatch.setenv("NEMESIS_WATCHER_DEBOUNCE_MS", "1000")
 
     config = NemesisConfig()
-    assert config.project_name == "my-project"
     assert config.graph_backend == "neo4j"
     assert config.watcher_debounce_ms == 1000
 
@@ -92,12 +86,46 @@ def test_config_neo4j_uri():
     assert config.neo4j_uri == "bolt://localhost:7687"
 
 
-def test_config_data_dir():
-    """data_dir property returns the .nemesis directory path."""
+def test_data_dir_defaults_to_home_nemesis():
+    """data_dir field defaults to ~/.nemesis."""
     from nemesis.core.config import NemesisConfig
 
-    config = NemesisConfig(project_root=Path("/tmp/myproject"))
-    assert config.data_dir == Path("/tmp/myproject/.nemesis")
+    config = NemesisConfig()
+    assert config.data_dir == Path.home() / ".nemesis"
+
+
+def test_graph_dir():
+    """graph_dir property returns data_dir / 'graph'."""
+    from nemesis.core.config import NemesisConfig
+
+    config = NemesisConfig()
+    assert config.graph_dir == config.data_dir / "graph"
+
+
+def test_vector_dir():
+    """vector_dir property returns data_dir / 'vectors'."""
+    from nemesis.core.config import NemesisConfig
+
+    config = NemesisConfig()
+    assert config.vector_dir == config.data_dir / "vectors"
+
+
+def test_registry_path():
+    """registry_path property returns data_dir / 'registry.json'."""
+    from nemesis.core.config import NemesisConfig
+
+    config = NemesisConfig()
+    assert config.registry_path == config.data_dir / "registry.json"
+
+
+def test_data_dir_from_env(monkeypatch):
+    """data_dir can be overridden via NEMESIS_DATA_DIR env var."""
+    monkeypatch.setenv("NEMESIS_DATA_DIR", "/tmp/custom-nemesis")
+
+    from nemesis.core.config import NemesisConfig
+
+    config = NemesisConfig()
+    assert config.data_dir == Path("/tmp/custom-nemesis")
 
 
 def test_config_graph_backend_validation():
