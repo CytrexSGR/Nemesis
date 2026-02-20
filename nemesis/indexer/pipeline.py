@@ -1,16 +1,23 @@
-"""Indexing Pipeline — Single File Index + Reindex."""
+"""Indexing Pipeline — Single File Index, Reindex, Full & Delta Project Index."""
 
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nemesis.indexer.chunker import chunk_node
-from nemesis.indexer.models import IndexResult
+from nemesis.indexer.delta import (
+    DEFAULT_IGNORE_DIRS,
+    _collect_code_files,
+    _get_extensions,
+    delete_file_data,
+    detect_changes,
+)
+from nemesis.indexer.models import ChangeType, IndexResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from nemesis.graph.adapter import GraphAdapter
     from nemesis.vector.embeddings import EmbeddingProvider
@@ -187,3 +194,147 @@ class IndexingPipeline:
 
         # Neu-Indexierung
         return self.index_file(path)
+
+    # ------------------------------------------------------------------
+    # Task 9: Full Project Index
+    # ------------------------------------------------------------------
+
+    def index_project(
+        self,
+        path: Path,
+        languages: list[str],
+        ignore_dirs: set[str] | None = None,
+    ) -> IndexResult:
+        """Indexiert ein gesamtes Projekt.
+
+        Sammelt alle Code-Dateien fuer die angegebenen Sprachen
+        und indexiert jede einzeln. Fehler einzelner Dateien werden
+        gesammelt, ohne den Gesamtprozess abzubrechen.
+
+        Args:
+            path: Wurzelverzeichnis des Projekts.
+            languages: Liste von Sprachen (z.B. ``["python"]``).
+            ignore_dirs: Zusaetzliche Verzeichnisnamen zum Ignorieren.
+
+        Returns:
+            Aggregiertes IndexResult ueber alle Dateien.
+        """
+        start = time.monotonic()
+        effective_ignore = DEFAULT_IGNORE_DIRS | (ignore_dirs or set())
+        extensions = _get_extensions(languages)
+        files = _collect_code_files(Path(path), extensions, effective_ignore)
+
+        total_files_indexed = 0
+        total_nodes = 0
+        total_edges = 0
+        total_chunks = 0
+        total_embeddings = 0
+        all_errors: list[str] = []
+
+        for i, file_path in enumerate(files):
+            self._notify(
+                "index_project",
+                f"[{i + 1}/{len(files)}] {file_path}",
+            )
+            try:
+                result = self.index_file(file_path)
+                total_files_indexed += result.files_indexed
+                total_nodes += result.nodes_created
+                total_edges += result.edges_created
+                total_chunks += result.chunks_created
+                total_embeddings += result.embeddings_created
+                all_errors.extend(result.errors)
+            except Exception as e:
+                all_errors.append(f"index_project failed for {file_path}: {e}")
+
+        elapsed_ms = (time.monotonic() - start) * 1000
+        return IndexResult(
+            files_indexed=total_files_indexed,
+            nodes_created=total_nodes,
+            edges_created=total_edges,
+            chunks_created=total_chunks,
+            embeddings_created=total_embeddings,
+            duration_ms=elapsed_ms,
+            errors=all_errors,
+        )
+
+    # ------------------------------------------------------------------
+    # Task 10: Delta Project Update
+    # ------------------------------------------------------------------
+
+    def update_project(
+        self,
+        path: Path,
+        languages: list[str],
+        ignore_dirs: set[str] | None = None,
+    ) -> IndexResult:
+        """Fuehrt ein Delta-Update fuer ein Projekt durch.
+
+        Erkennt Aenderungen gegenueber dem Graph-Stand und
+        verarbeitet nur geaenderte, neue und geloeschte Dateien.
+
+        Args:
+            path: Wurzelverzeichnis des Projekts.
+            languages: Liste von Sprachen.
+            ignore_dirs: Zusaetzliche Verzeichnisnamen zum Ignorieren.
+
+        Returns:
+            Aggregiertes IndexResult ueber alle Aenderungen.
+        """
+        start = time.monotonic()
+        changes = detect_changes(
+            Path(path),
+            self.graph,
+            languages,
+            ignore_dirs,
+        )
+
+        total_files_indexed = 0
+        total_nodes = 0
+        total_edges = 0
+        total_chunks = 0
+        total_embeddings = 0
+        all_errors: list[str] = []
+
+        for i, change in enumerate(changes):
+            self._notify(
+                "update_project",
+                f"[{i + 1}/{len(changes)}] {change.change_type.value}: {change.path}",
+            )
+            try:
+                if change.change_type == ChangeType.DELETED:
+                    delete_file_data(
+                        str(change.path),
+                        self.graph,
+                        self.vector_store,
+                    )
+                    total_files_indexed += 1
+                elif change.change_type == ChangeType.MODIFIED:
+                    result = self.reindex_file(change.path)
+                    total_files_indexed += result.files_indexed
+                    total_nodes += result.nodes_created
+                    total_edges += result.edges_created
+                    total_chunks += result.chunks_created
+                    total_embeddings += result.embeddings_created
+                    all_errors.extend(result.errors)
+                elif change.change_type == ChangeType.ADDED:
+                    result = self.index_file(change.path)
+                    total_files_indexed += result.files_indexed
+                    total_nodes += result.nodes_created
+                    total_edges += result.edges_created
+                    total_chunks += result.chunks_created
+                    total_embeddings += result.embeddings_created
+                    all_errors.extend(result.errors)
+            except Exception as e:
+                all_errors.append(f"update_project failed for {change.path}: {e}")
+
+        elapsed_ms = (time.monotonic() - start) * 1000
+        return IndexResult(
+            files_indexed=total_files_indexed,
+            nodes_created=total_nodes,
+            edges_created=total_edges,
+            chunks_created=total_chunks,
+            embeddings_created=total_embeddings,
+            duration_ms=elapsed_ms,
+            errors=all_errors,
+        )

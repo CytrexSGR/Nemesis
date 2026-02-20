@@ -1,4 +1,4 @@
-"""Tests fuer nemesis.indexer.pipeline — Single File Index + Reindex."""
+"""Tests fuer nemesis.indexer.pipeline — Single File Index, Reindex, Full & Delta."""
 
 from __future__ import annotations
 
@@ -402,3 +402,315 @@ class TestReindexFile:
         assert result.success is False
         assert len(result.errors) >= 1
         assert "cleanup failed" in result.errors[0]
+
+
+# ---------------------------------------------------------------------------
+# Task 9: index_project — Full Project Index
+# ---------------------------------------------------------------------------
+
+
+class TestIndexProject:
+    def test_index_project_indexes_all_files(self, tmp_path: Path):
+        """index_project indexiert alle passenden Dateien, ignoriert andere."""
+        (tmp_path / "a.py").write_text("x = 1\n")
+        (tmp_path / "b.py").write_text("y = 2\n")
+        (tmp_path / "readme.md").write_text("# Readme\n")
+
+        node = MockCodeNode(
+            id="v-1",
+            node_type="variable",
+            name="x",
+            start_line=1,
+            end_line=1,
+            source="x = 1\n",
+        )
+        parse_result = MockParseResult(nodes=[node], edges=[])
+
+        parser = _make_mock_parser(parse_result)
+        graph = _make_mock_graph()
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+
+        result = pipeline.index_project(tmp_path, languages=["python"])
+
+        # Nur die 2 .py Dateien, nicht die .md
+        assert parser.parse_file.call_count == 2
+        assert result.files_indexed == 2
+
+    def test_index_project_skips_ignored_dirs(self, tmp_path: Path):
+        """__pycache__/ Dateien werden uebersprungen."""
+        (tmp_path / "main.py").write_text("a = 1\n")
+        cache_dir = tmp_path / "__pycache__"
+        cache_dir.mkdir()
+        (cache_dir / "cached.py").write_text("b = 2\n")
+
+        node = MockCodeNode(
+            id="v-a",
+            node_type="variable",
+            name="a",
+            start_line=1,
+            end_line=1,
+            source="a = 1\n",
+        )
+        parse_result = MockParseResult(nodes=[node], edges=[])
+
+        parser = _make_mock_parser(parse_result)
+        graph = _make_mock_graph()
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+
+        result = pipeline.index_project(tmp_path, languages=["python"])
+
+        # Nur main.py, nicht __pycache__/cached.py
+        assert parser.parse_file.call_count == 1
+        assert result.files_indexed == 1
+
+    def test_index_project_multiple_languages(self, tmp_path: Path):
+        """index_project findet Dateien mehrerer Sprachen."""
+        (tmp_path / "app.py").write_text("x = 1\n")
+        (tmp_path / "index.ts").write_text("const x = 1;\n")
+
+        node = MockCodeNode(
+            id="v-multi",
+            node_type="variable",
+            name="x",
+            start_line=1,
+            end_line=1,
+            source="x = 1\n",
+        )
+        parse_result = MockParseResult(nodes=[node], edges=[])
+
+        parser = _make_mock_parser(parse_result)
+        graph = _make_mock_graph()
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+
+        result = pipeline.index_project(tmp_path, languages=["python", "typescript"])
+
+        assert parser.parse_file.call_count == 2
+        assert result.files_indexed == 2
+
+    def test_index_project_empty_dir(self, tmp_path: Path):
+        """Leeres Verzeichnis ergibt 0 Dateien, success=True."""
+        parser = _make_mock_parser()
+        graph = _make_mock_graph()
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+
+        result = pipeline.index_project(tmp_path, languages=["python"])
+
+        assert result.files_indexed == 0
+        assert result.success is True
+        parser.parse_file.assert_not_called()
+
+    def test_index_project_continues_on_single_file_error(self, tmp_path: Path):
+        """Fehler bei einer Datei unterbricht nicht die anderen."""
+        (tmp_path / "good.py").write_text("x = 1\n")
+        (tmp_path / "bad.py").write_text("broken!\n")
+
+        node = MockCodeNode(
+            id="v-good",
+            node_type="variable",
+            name="x",
+            start_line=1,
+            end_line=1,
+            source="x = 1\n",
+        )
+        good_result = MockParseResult(nodes=[node], edges=[])
+
+        # Parser: erste Datei (bad.py, alphabetisch) wirft Fehler, zweite (good.py) OK
+        parser = MagicMock()
+
+        def _parse_side_effect(path_str):
+            if "bad.py" in path_str:
+                raise RuntimeError("Parse error")
+            return good_result
+
+        parser.parse_file.side_effect = _parse_side_effect
+
+        graph = _make_mock_graph()
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+
+        result = pipeline.index_project(tmp_path, languages=["python"])
+
+        # Beide Dateien wurden verarbeitet
+        assert parser.parse_file.call_count == 2
+        # Mindestens eine erfolgreich
+        assert result.files_indexed >= 1
+        # Fehler von bad.py gesammelt
+        assert len(result.errors) >= 1
+
+    def test_index_project_progress_reporting(self, tmp_path: Path):
+        """on_progress Callback wird fuer jede Datei aufgerufen."""
+        (tmp_path / "one.py").write_text("a = 1\n")
+        (tmp_path / "two.py").write_text("b = 2\n")
+
+        node = MockCodeNode(
+            id="v-prog",
+            node_type="variable",
+            name="a",
+            start_line=1,
+            end_line=1,
+            source="a = 1\n",
+        )
+        parse_result = MockParseResult(nodes=[node], edges=[])
+
+        parser = _make_mock_parser(parse_result)
+        graph = _make_mock_graph()
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        progress_calls: list[tuple[str, str]] = []
+
+        def _on_progress(step: str, detail: str) -> None:
+            progress_calls.append((step, detail))
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+            on_progress=_on_progress,
+        )
+
+        pipeline.index_project(tmp_path, languages=["python"])
+
+        # Mindestens 2 index_project Aufrufe (einen pro Datei)
+        project_calls = [c for c in progress_calls if c[0] == "index_project"]
+        assert len(project_calls) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Task 10: update_project — Delta Project Update
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateProject:
+    def test_update_project_processes_all_change_types(self, tmp_path: Path):
+        """Modified + neue Dateien auf Disk, geloeschte im Graph."""
+        (tmp_path / "new.py").write_text("x = 1\n")
+        (tmp_path / "modified.py").write_text("y = 2\n")
+
+        node = MockCodeNode(
+            id="v-up",
+            node_type="variable",
+            name="x",
+            start_line=1,
+            end_line=1,
+            source="x = 1\n",
+        )
+        parse_result = MockParseResult(nodes=[node], edges=[])
+
+        parser = _make_mock_parser(parse_result)
+        graph = _make_mock_graph()
+        graph.get_file_hashes.return_value = {
+            str(tmp_path / "modified.py"): "old-hash",
+            str(tmp_path / "deleted.py"): "deleted-hash",
+        }
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+
+        result = pipeline.update_project(tmp_path, languages=["python"])
+
+        # Alle 3 Change-Typen verarbeitet
+        assert result.files_indexed >= 3
+        # Parser aufgerufen fuer new.py (index_file) + modified.py (reindex_file)
+        assert parser.parse_file.call_count >= 2
+
+    def test_update_project_no_changes(self, tmp_path: Path):
+        """Keine Aenderungen -> 0 indexiert, Parser nicht aufgerufen."""
+        (tmp_path / "stable.py").write_text("x = 1\n")
+
+        # Hash berechnen, damit detect_changes "unchanged" erkennt
+        from nemesis.indexer.delta import compute_file_hash
+
+        real_hash = compute_file_hash(tmp_path / "stable.py")
+
+        parser = _make_mock_parser()
+        graph = _make_mock_graph()
+        graph.get_file_hashes.return_value = {
+            str(tmp_path / "stable.py"): real_hash,
+        }
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+
+        result = pipeline.update_project(tmp_path, languages=["python"])
+
+        assert result.files_indexed == 0
+        parser.parse_file.assert_not_called()
+
+    def test_update_project_handles_deleted_files(self, tmp_path: Path):
+        """Datei im Graph, aber nicht auf Disk -> delete_nodes_for_file."""
+        # Leeres Verzeichnis — keine Dateien auf Disk
+        parser = _make_mock_parser()
+        graph = _make_mock_graph()
+        graph.get_file_hashes.return_value = {
+            str(tmp_path / "gone.py"): "old-hash",
+        }
+        vector_store = _make_mock_vector_store()
+        embedder = _make_mock_embedder()
+
+        pipeline = IndexingPipeline(
+            parser=parser,
+            graph=graph,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+
+        result = pipeline.update_project(tmp_path, languages=["python"])
+
+        # delete_nodes_for_file wurde aufgerufen
+        graph.delete_nodes_for_file.assert_called_once_with(str(tmp_path / "gone.py"))
+        assert result.files_indexed >= 1
+        # Parser nicht aufgerufen (nur Loeschung)
+        parser.parse_file.assert_not_called()
