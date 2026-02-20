@@ -1,1 +1,1 @@
-"""Vector module — embeddings, LanceDB store."""
+"""Vector storage and embedding generation for Nemesis."""
