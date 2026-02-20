@@ -1,1 +1,1 @@
-"""Indexer module — pipeline, chunker, delta updates."""
+"""Nemesis Indexer — Pipeline, Chunker, Delta."""
