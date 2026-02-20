@@ -23,6 +23,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "properties": {
                 "query": {"type": "string", "description": "Natural language search query"},
                 "limit": {"type": "integer", "description": "Max results", "default": 10},
+                "project": {"type": "string", "description": "Filter to specific project (omit for cross-project search)"},
             },
             "required": ["query"],
         },
@@ -35,6 +36,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "properties": {
                 "file_path": {"type": "string", "description": "Path to the file"},
                 "depth": {"type": "integer", "description": "Traversal depth", "default": 2},
+                "project": {"type": "string", "description": "Project name (auto-resolved from file_path if omitted)"},
             },
             "required": ["file_path"],
         },
@@ -51,6 +53,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "items": {"type": "string"},
                     "description": "Languages to index",
                 },
+                "name": {"type": "string", "description": "Custom project name (defaults to directory name)"},
             },
             "required": ["path"],
         },
@@ -67,6 +70,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "items": {"type": "string"},
                     "description": "Languages to index",
                 },
+                "project": {"type": "string", "description": "Project name (auto-resolved from path if omitted)"},
             },
             "required": ["path"],
         },
@@ -125,6 +129,25 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "properties": {},
         },
     },
+    {
+        "name": "list_projects",
+        "description": "List all registered projects",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "remove_project",
+        "description": "Remove a project and its indexed data",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Project name to remove"},
+            },
+            "required": ["name"],
+        },
+    },
 ]
 
 # Mapping tool name -> function
@@ -137,6 +160,8 @@ _TOOL_DISPATCH: dict[str, Any] = {
     "remember_decision": tool_funcs.remember_decision,
     "get_memory": tool_funcs.get_memory,
     "get_session_summary": tool_funcs.get_session_summary,
+    "list_projects": tool_funcs.list_projects,
+    "remove_project": tool_funcs.remove_project,
 }
 
 

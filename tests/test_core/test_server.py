@@ -20,14 +20,51 @@ class TestToolDefinitions:
     """Tests for TOOL_DEFINITIONS and _TOOL_DISPATCH consistency."""
 
     def test_all_tools_defined(self):
-        """TOOL_DEFINITIONS has exactly 8 tool entries."""
-        assert len(TOOL_DEFINITIONS) == 8
+        """TOOL_DEFINITIONS has exactly 10 tool entries."""
+        assert len(TOOL_DEFINITIONS) == 10
 
     def test_all_tools_have_dispatch(self):
         """Every tool in TOOL_DEFINITIONS has a corresponding entry in _TOOL_DISPATCH."""
         definition_names = {td["name"] for td in TOOL_DEFINITIONS}
         dispatch_names = set(_TOOL_DISPATCH.keys())
         assert definition_names == dispatch_names
+
+
+# ---------------------------------------------------------------
+# TestMultiProjectToolDefinitions
+# ---------------------------------------------------------------
+
+
+class TestMultiProjectToolDefinitions:
+    """Tests for multi-project tool schema fields."""
+
+    def test_search_code_has_project_param(self):
+        search_tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "search_code")
+        assert "project" in search_tool["inputSchema"]["properties"]
+
+    def test_get_context_has_project_param(self):
+        ctx_tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "get_context")
+        assert "project" in ctx_tool["inputSchema"]["properties"]
+
+    def test_index_project_has_name_param(self):
+        idx_tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "index_project")
+        assert "name" in idx_tool["inputSchema"]["properties"]
+
+    def test_update_project_has_project_param(self):
+        upd_tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "update_project")
+        assert "project" in upd_tool["inputSchema"]["properties"]
+
+    def test_list_projects_defined(self):
+        names = [t["name"] for t in TOOL_DEFINITIONS]
+        assert "list_projects" in names
+
+    def test_remove_project_defined(self):
+        names = [t["name"] for t in TOOL_DEFINITIONS]
+        assert "remove_project" in names
+
+    def test_remove_project_requires_name(self):
+        rm_tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "remove_project")
+        assert "name" in rm_tool["inputSchema"].get("required", [])
 
 
 # ---------------------------------------------------------------
@@ -48,7 +85,7 @@ class TestCreateMcpServer:
         assert server.name == "nemesis"
 
     async def test_list_tools_returns_all(self):
-        """The list_tools handler returns all 8 tools."""
+        """The list_tools handler returns all 10 tools."""
         import mcp.types as types
 
         mock_engine = MagicMock()
@@ -63,7 +100,7 @@ class TestCreateMcpServer:
         assert isinstance(result, types.ServerResult)
         tools_result = result.root
         assert isinstance(tools_result, types.ListToolsResult)
-        assert len(tools_result.tools) == 8
+        assert len(tools_result.tools) == 10
 
         tool_names = {t.name for t in tools_result.tools}
         expected_names = {td["name"] for td in TOOL_DEFINITIONS}
