@@ -5,6 +5,7 @@ pub fn language() -> TsLanguage {
 }
 
 /// Tree-sitter query patterns for Python code extraction.
+#[allow(dead_code)]
 pub const CLASS_QUERY: &str = r#"
 (class_definition
   name: (identifier) @class.name
@@ -12,6 +13,7 @@ pub const CLASS_QUERY: &str = r#"
   body: (block) @class.body) @class.def
 "#;
 
+#[allow(dead_code)]
 pub const FUNCTION_QUERY: &str = r#"
 (function_definition
   name: (identifier) @func.name
@@ -20,6 +22,7 @@ pub const FUNCTION_QUERY: &str = r#"
   body: (block) @func.body) @func.def
 "#;
 
+#[allow(dead_code)]
 pub const IMPORT_QUERY: &str = r#"
 [
   (import_statement
@@ -30,6 +33,7 @@ pub const IMPORT_QUERY: &str = r#"
 ]
 "#;
 
+#[allow(dead_code)]
 pub const ASSIGNMENT_QUERY: &str = r#"
 (assignment
   left: (identifier) @var.name

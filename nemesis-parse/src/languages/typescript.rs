@@ -8,12 +8,14 @@ pub fn language_tsx() -> TsLanguage {
     tree_sitter_typescript::LANGUAGE_TSX.into()
 }
 
+#[allow(dead_code)]
 pub const CLASS_QUERY: &str = r#"
 (class_declaration
   name: (type_identifier) @class.name
   body: (class_body) @class.body) @class.def
 "#;
 
+#[allow(dead_code)]
 pub const FUNCTION_QUERY: &str = r#"
 [
   (function_declaration
@@ -27,12 +29,14 @@ pub const FUNCTION_QUERY: &str = r#"
 ]
 "#;
 
+#[allow(dead_code)]
 pub const INTERFACE_QUERY: &str = r#"
 (interface_declaration
   name: (type_identifier) @iface.name
   body: (interface_body) @iface.body) @iface.def
 "#;
 
+#[allow(dead_code)]
 pub const IMPORT_QUERY: &str = r#"
 (import_statement
   source: (string) @import.source) @import.stmt

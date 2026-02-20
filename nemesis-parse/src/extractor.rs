@@ -202,6 +202,7 @@ fn extract_python_class(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn extract_python_function(
     node: &Node,
     source: &str,
@@ -340,6 +341,7 @@ fn extract_python_import(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn extract_python_variable(
     node: &Node,
     source: &str,
