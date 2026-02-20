@@ -6,6 +6,7 @@ import asyncio
 from typing import Any
 
 from nemesis.core.config import NemesisConfig
+from nemesis.core.hooks import HookManager
 from nemesis.graph import create_graph_adapter
 from nemesis.indexer.pipeline import IndexingPipeline
 from nemesis.memory.context import SessionContext
@@ -113,6 +114,7 @@ class NemesisEngine:
         self._rules = None
         self._decisions = None
         self._conventions = None
+        self._hooks = None
         self._initialized = False
 
     def initialize(self) -> None:
@@ -167,6 +169,9 @@ class NemesisEngine:
         self._decisions = DecisionsManager(self._graph)
         self._conventions = ConventionManager(self._graph)
 
+        # Hooks
+        self._hooks = HookManager()
+
         self._initialized = True
 
     @property
@@ -214,12 +219,19 @@ class NemesisEngine:
         self._ensure_initialized()
         return self._conventions
 
+    @property
+    def hooks(self):
+        self._ensure_initialized()
+        return self._hooks
+
     def _ensure_initialized(self) -> None:
         if not self._initialized:
             raise RuntimeError("NemesisEngine not initialized. Call initialize() first.")
 
     def close(self) -> None:
         """Close all resources."""
+        if self._hooks:
+            self._hooks.clear()
         if self._graph:
             self._graph.close()
         if self._vector_store:
