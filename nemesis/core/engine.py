@@ -145,7 +145,10 @@ class NemesisEngine:
         # Embedder (async -> sync wrapped)
         embed_kwargs: dict[str, Any] = {}
         if cfg.vector_provider == "openai":
-            embed_kwargs["api_key"] = cfg.openai_api_key
+            from openai import AsyncOpenAI
+
+            client = AsyncOpenAI(api_key=cfg.openai_api_key or None)
+            embed_kwargs["client"] = client
             embed_kwargs["model"] = cfg.vector_model
         raw_embedder = create_embedding_provider(
             provider_type=cfg.vector_provider, **embed_kwargs

@@ -121,7 +121,7 @@ fn extract_edges(source: &str, language: &str, file_path: &str) -> PyResult<Stri
 
 /// nemesis-parse -- Tree-sitter AST parser for Nemesis.
 #[pymodule]
-fn nemesis_parse(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _nemesis_parse(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(supported_languages, m)?)?;
     m.add_function(wrap_pyfunction!(detect_language, m)?)?;

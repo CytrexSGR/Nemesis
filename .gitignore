@@ -16,6 +16,7 @@ venv/
 ENV/
 
 # Rust
+target/
 nemesis-parse/target/
 **/*.rs.bk
 

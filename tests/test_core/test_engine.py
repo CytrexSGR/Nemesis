@@ -200,8 +200,10 @@ class TestNemesisEngine:
     @patch("nemesis.core.engine.create_embedding_provider")
     @patch("nemesis.core.engine.VectorStore")
     @patch("nemesis.core.engine.create_graph_adapter")
+    @patch("openai.AsyncOpenAI")
     def test_initialize_creates_components(
         self,
+        _mock_openai_client,
         mock_graph_adapter,
         mock_vector_store,
         mock_embed_provider,
@@ -247,8 +249,10 @@ class TestNemesisEngine:
     @patch("nemesis.core.engine.create_embedding_provider")
     @patch("nemesis.core.engine.VectorStore")
     @patch("nemesis.core.engine.create_graph_adapter")
+    @patch("openai.AsyncOpenAI")
     def test_context_manager(
         self,
+        _mock_openai_client,
         mock_graph_adapter,
         mock_vector_store,
         mock_embed_provider,
@@ -280,8 +284,10 @@ class TestNemesisEngine:
     @patch("nemesis.core.engine.create_embedding_provider")
     @patch("nemesis.core.engine.VectorStore")
     @patch("nemesis.core.engine.create_graph_adapter")
+    @patch("openai.AsyncOpenAI")
     def test_close_resets_state(
         self,
+        _mock_openai_client,
         mock_graph_adapter,
         mock_vector_store,
         mock_embed_provider,
@@ -315,8 +321,10 @@ class TestNemesisEngine:
     @patch("nemesis.core.engine.create_embedding_provider")
     @patch("nemesis.core.engine.VectorStore")
     @patch("nemesis.core.engine.create_graph_adapter")
+    @patch("openai.AsyncOpenAI")
     def test_double_initialize_noop(
         self,
+        _mock_openai_client,
         mock_graph_adapter,
         mock_vector_store,
         mock_embed_provider,
@@ -350,8 +358,10 @@ class TestNemesisEngine:
     @patch("nemesis.core.engine.create_embedding_provider")
     @patch("nemesis.core.engine.VectorStore")
     @patch("nemesis.core.engine.create_graph_adapter")
+    @patch("openai.AsyncOpenAI")
     def test_neo4j_backend_kwargs(
         self,
+        _mock_openai_client,
         mock_graph_adapter,
         mock_vector_store,
         mock_embed_provider,
@@ -394,8 +404,10 @@ class TestNemesisEngine:
     @patch("nemesis.core.engine.create_embedding_provider")
     @patch("nemesis.core.engine.VectorStore")
     @patch("nemesis.core.engine.create_graph_adapter")
+    @patch("openai.AsyncOpenAI")
     def test_openai_embed_kwargs(
         self,
+        mock_openai_client_cls,
         mock_graph_adapter,
         mock_vector_store,
         mock_embed_provider,
@@ -406,10 +418,12 @@ class TestNemesisEngine:
         mock_decisions,
         mock_conventions,
     ):
-        """OpenAI embedding provider receives api_key and model."""
+        """OpenAI embedding provider receives AsyncOpenAI client and model."""
         mock_graph_adapter.return_value = MagicMock()
         mock_vector_store.return_value = AsyncMock()
         mock_embed_provider.return_value = AsyncMock()
+        mock_client_instance = MagicMock()
+        mock_openai_client_cls.return_value = mock_client_instance
 
         cfg = NemesisConfig(
             vector_provider="openai",
@@ -419,9 +433,10 @@ class TestNemesisEngine:
         engine = NemesisEngine(config=cfg)
         engine.initialize()
 
+        mock_openai_client_cls.assert_called_once_with(api_key="sk-test")
         mock_embed_provider.assert_called_once_with(
             provider_type="openai",
-            api_key="sk-test",
+            client=mock_client_instance,
             model="text-embedding-3-large",
         )
         engine.close()
