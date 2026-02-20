@@ -250,13 +250,15 @@ class IndexingPipeline:
             IndexResult mit Statistiken und ggf. Fehlern.
         """
         start = time.monotonic()
-        path_str = str(path)
+        # Use relative path for cleanup if project_root is set,
+        # because nodes are stored with relative paths in the graph.
+        lookup_path = str(path.relative_to(project_root)) if project_root else str(path)
 
         # Cleanup-Phase: alte Daten loeschen
         try:
-            self._notify("cleanup", f"deleting old data for {path_str}")
-            chunk_ids = self.graph.get_chunk_ids_for_file(path_str)
-            self.graph.delete_nodes_for_file(path_str)
+            self._notify("cleanup", f"deleting old data for {lookup_path}")
+            chunk_ids = self.graph.get_chunk_ids_for_file(lookup_path)
+            self.graph.delete_nodes_for_file(lookup_path)
             if chunk_ids:
                 self.vector_store.delete_embeddings(chunk_ids)
         except Exception as e:
@@ -268,7 +270,7 @@ class IndexingPipeline:
                 chunks_created=0,
                 embeddings_created=0,
                 duration_ms=elapsed_ms,
-                errors=[f"cleanup failed for {path_str}: {e}"],
+                errors=[f"cleanup failed for {lookup_path}: {e}"],
             )
 
         # Neu-Indexierung
@@ -400,8 +402,10 @@ class IndexingPipeline:
             )
             try:
                 if change.change_type == ChangeType.DELETED:
+                    # Use relative path for deletion if project_root is set
+                    del_path = str(change.path.relative_to(effective_root)) if project_root else str(change.path)
                     delete_file_data(
-                        str(change.path),
+                        del_path,
                         self.graph,
                         self.vector_store,
                     )
