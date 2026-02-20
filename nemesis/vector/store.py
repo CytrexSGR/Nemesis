@@ -226,6 +226,46 @@ class VectorStore:
 
         return results
 
+    async def delete(self, ids: list[str]) -> None:
+        """Delete vectors by their IDs.
+
+        Args:
+            ids: List of vector IDs to delete.
+        """
+        self._require_initialized()
+
+        if not ids:
+            return
+
+        loop = asyncio.get_event_loop()
+
+        # Build an IN clause for the delete filter
+        id_list = ", ".join(f"'{id_}'" for id_ in ids)
+        where = f"id IN ({id_list})"
+
+        await loop.run_in_executor(None, lambda: self._table.delete(where))
+
+    async def delete_by_file(self, file_path: str) -> None:
+        """Delete all vectors associated with a specific file.
+
+        Uses a LIKE clause on the JSON metadata column to match the
+        file path.
+
+        Args:
+            file_path: The file path to match in metadata.
+        """
+        self._require_initialized()
+
+        loop = asyncio.get_event_loop()
+        # Build a LIKE pattern that matches the JSON fragment for the file key.
+        # The metadata is stored as a JSON string, so we search for the
+        # substring '"file": "value"' within it.
+        json_fragment = f'"file": {json.dumps(file_path)}'
+        escaped = json_fragment.replace("'", "''")
+        where = f"metadata LIKE '%{escaped}%'"
+
+        await loop.run_in_executor(None, lambda: self._table.delete(where))
+
     async def close(self) -> None:
         """Close the vector store and release resources."""
         self._table = None

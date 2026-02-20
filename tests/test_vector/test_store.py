@@ -252,3 +252,90 @@ class TestVectorStoreSearch:
             filter={"language": "rust"},
         )
         assert results == []
+
+
+class TestVectorStoreDelete:
+    """Tests for delete operations."""
+
+    @pytest.fixture
+    async def populated_store(self, tmp_path: Path) -> VectorStore:
+        """Create a store with pre-populated test data."""
+        s = VectorStore(path=str(tmp_path / "vectors"))
+        await s.initialize(dimensions=3)
+        await s.add(
+            ids=["c1", "c2", "c3", "c4"],
+            texts=["text1", "text2", "text3", "text4"],
+            embeddings=[
+                [0.1, 0.0, 0.0],
+                [0.0, 0.1, 0.0],
+                [0.0, 0.0, 0.1],
+                [0.1, 0.1, 0.0],
+            ],
+            metadata=[
+                {"file": "a.py"},
+                {"file": "a.py"},
+                {"file": "b.py"},
+                {"file": "b.py"},
+            ],
+        )
+        yield s
+        await s.close()
+
+    @pytest.mark.asyncio
+    async def test_delete_single_id(self, populated_store: VectorStore) -> None:
+        await populated_store.delete(ids=["c1"])
+        count = await populated_store.count()
+        assert count == 3
+
+    @pytest.mark.asyncio
+    async def test_delete_multiple_ids(self, populated_store: VectorStore) -> None:
+        await populated_store.delete(ids=["c1", "c3"])
+        count = await populated_store.count()
+        assert count == 2
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent_id(self, populated_store: VectorStore) -> None:
+        """Deleting a non-existent ID should not raise."""
+        await populated_store.delete(ids=["nonexistent"])
+        count = await populated_store.count()
+        assert count == 4  # Nothing deleted
+
+    @pytest.mark.asyncio
+    async def test_delete_empty_list(self, populated_store: VectorStore) -> None:
+        await populated_store.delete(ids=[])
+        count = await populated_store.count()
+        assert count == 4
+
+    @pytest.mark.asyncio
+    async def test_delete_by_file(self, populated_store: VectorStore) -> None:
+        """Delete all vectors belonging to a specific file."""
+        await populated_store.delete_by_file(file_path="a.py")
+        count = await populated_store.count()
+        assert count == 2
+        # Remaining should all be from b.py
+        results = await populated_store.search(query_embedding=[0.0, 0.0, 0.1], limit=10)
+        for r in results:
+            assert r.metadata["file"] == "b.py"
+
+    @pytest.mark.asyncio
+    async def test_delete_by_file_nonexistent(self, populated_store: VectorStore) -> None:
+        """Deleting by non-existent file should not raise."""
+        await populated_store.delete_by_file(file_path="nonexistent.py")
+        count = await populated_store.count()
+        assert count == 4
+
+    @pytest.mark.asyncio
+    async def test_delete_then_add(self, populated_store: VectorStore) -> None:
+        """Store should work correctly after deletions."""
+        await populated_store.delete(ids=["c1", "c2", "c3", "c4"])
+        count = await populated_store.count()
+        assert count == 0
+
+        await populated_store.add(
+            ids=["new1"],
+            texts=["new text"],
+            embeddings=[[0.5, 0.5, 0.5]],
+            metadata=[{"file": "new.py"}],
+        )
+        count = await populated_store.count()
+        assert count == 1
