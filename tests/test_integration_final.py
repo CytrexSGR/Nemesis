@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from nemesis.core.config import NemesisConfig
 from nemesis.core.hooks import HookEvent, HookManager
@@ -28,13 +28,15 @@ def _make_mock_engine(tmp_path):
 
     with (
         patch("nemesis.core.engine.create_graph_adapter") as mock_graph_factory,
-        patch("nemesis.core.engine.VectorStore"),
-        patch("nemesis.core.engine.create_embedding_provider"),
+        patch("nemesis.core.engine.VectorStore") as mock_vs_cls,
+        patch("nemesis.core.engine.create_embedding_provider") as mock_embed_cls,
         patch("nemesis.core.engine.ParserBridge"),
     ):
         mock_graph = MagicMock()
         mock_graph.query.return_value = []
         mock_graph_factory.return_value = mock_graph
+        mock_vs_cls.return_value = AsyncMock()
+        mock_embed_cls.return_value = AsyncMock()
 
         from nemesis.core.engine import NemesisEngine
 

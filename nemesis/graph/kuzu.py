@@ -52,6 +52,7 @@ EDGE_ENDPOINTS: dict[str, list[tuple[str, str]]] = {
         ("Function", "File"),
         ("File", "File"),
         ("File", "Module"),
+        ("File", "Import"),
         ("Module", "Module"),
     ],
     "RETURNS": [("Function", "Class"), ("Method", "Class")],

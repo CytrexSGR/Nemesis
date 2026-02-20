@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -168,7 +169,9 @@ def create_mcp_server(engine: NemesisEngine) -> Server:
             return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
 
         try:
-            result = func(engine, **arguments)
+            # Run in thread pool — sync wrappers can't run in async context
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, lambda: func(engine, **arguments))
             return [TextContent(type="text", text=json.dumps(result, default=str))]
         except Exception as e:
             return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
@@ -185,7 +188,10 @@ async def run_stdio_server(config: NemesisConfig | None = None) -> None:
     from mcp.server.stdio import stdio_server
 
     engine = NemesisEngine(config or NemesisConfig())
-    engine.initialize()
+
+    # Initialize in thread pool — sync wrappers create own event loops
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, engine.initialize)
 
     server = create_mcp_server(engine)
 
@@ -197,4 +203,4 @@ async def run_stdio_server(config: NemesisConfig | None = None) -> None:
                 server.create_initialization_options(),
             )
     finally:
-        engine.close()
+        await loop.run_in_executor(None, engine.close)

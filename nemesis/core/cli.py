@@ -21,13 +21,20 @@ def main() -> None:
 @main.command()
 @click.argument("path", default=".", type=click.Path(exists=True))
 @click.option("--languages", "-l", multiple=True, help="Languages to index.")
-def index(path: str, languages: tuple[str, ...]) -> None:
+@click.option(
+    "--project-root",
+    "-p",
+    default=".",
+    type=click.Path(exists=True),
+    help="Project root (where .nemesis data is stored).",
+)
+def index(path: str, languages: tuple[str, ...], project_root: str) -> None:
     """Index a project directory."""
-    config = NemesisConfig(project_root=Path(path))
+    config = NemesisConfig(project_root=Path(project_root))
     if languages:
-        config = NemesisConfig(project_root=Path(path), languages=list(languages))
+        config = NemesisConfig(project_root=Path(project_root), languages=list(languages))
 
-    click.echo(f"Indexing {path}...")
+    click.echo(f"Indexing {path} (data in {config.data_dir})...")
 
     try:
         with NemesisEngine(config) as engine:
@@ -41,6 +48,7 @@ def index(path: str, languages: tuple[str, ...]) -> None:
         click.echo(f"  Nodes: {result.nodes_created}")
         click.echo(f"  Edges: {result.edges_created}")
         click.echo(f"  Chunks: {result.chunks_created}")
+        click.echo(f"  Embeddings: {result.embeddings_created}")
         click.echo(f"  Duration: {result.duration_ms:.0f}ms")
 
         if result.errors:
@@ -157,10 +165,12 @@ def watch(path: str, languages: tuple[str, ...]) -> None:
 def serve(transport: str) -> None:
     """Start the MCP server."""
     import asyncio
+    import sys
 
     from nemesis.core.server import run_stdio_server
 
-    click.echo(f"Starting Nemesis MCP server ({transport} transport)...")
+    # Log to stderr — stdout is reserved for MCP JSON-RPC protocol
+    click.echo(f"Starting Nemesis MCP server ({transport} transport)...", err=True)
     asyncio.run(run_stdio_server())
 
 

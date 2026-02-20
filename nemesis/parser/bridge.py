@@ -19,7 +19,7 @@ class ParserError(Exception):
 # Try to import the native Rust extension
 _native = None
 try:
-    import nemesis_parse as _native  # type: ignore[import-not-found]
+    from nemesis import _nemesis_parse as _native  # type: ignore[import-not-found]
 except ImportError:
     _native = None
 

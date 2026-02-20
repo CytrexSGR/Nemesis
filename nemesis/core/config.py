@@ -16,7 +16,12 @@ class NemesisConfig(BaseSettings):
     Example: NEMESIS_PROJECT_NAME=my-project
     """
 
-    model_config = {"env_prefix": "NEMESIS_"}
+    model_config = {
+        "env_prefix": "NEMESIS_",
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
     # Project
     project_name: str = "nemesis"

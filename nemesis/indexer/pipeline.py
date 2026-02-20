@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nemesis.graph.adapter import EdgeData, NodeData
 from nemesis.indexer.chunker import chunk_node
 from nemesis.indexer.delta import (
     DEFAULT_IGNORE_DIRS,
@@ -15,6 +16,7 @@ from nemesis.indexer.delta import (
     detect_changes,
 )
 from nemesis.indexer.models import ChangeType, IndexResult
+from nemesis.parser.models import CodeEdge, CodeNode
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -22,6 +24,38 @@ if TYPE_CHECKING:
     from nemesis.graph.adapter import GraphAdapter
     from nemesis.vector.embeddings import EmbeddingProvider
     from nemesis.vector.store import VectorStore
+
+
+def _to_node_data(node: CodeNode | NodeData | Any) -> NodeData | Any:
+    """Convert a CodeNode to NodeData for the graph adapter. Pass others through."""
+    if isinstance(node, CodeNode):
+        props: dict[str, object] = {
+            "name": node.name,
+            "file": node.file,
+            "line_start": node.line_start,
+            "line_end": node.line_end,
+            "language": node.language,
+        }
+        if node.docstring:
+            props["docstring"] = node.docstring
+        if node.signature:
+            props["signature"] = node.signature
+        if node.source:
+            props["source"] = node.source
+        return NodeData(id=node.id, node_type=node.kind, properties=props)
+    return node
+
+
+def _to_edge_data(edge: CodeEdge | EdgeData | Any) -> EdgeData | Any:
+    """Convert a CodeEdge to EdgeData for the graph adapter. Pass others through."""
+    if isinstance(edge, CodeEdge):
+        return EdgeData(
+            source_id=edge.source_id,
+            target_id=edge.target_id,
+            edge_type=edge.kind,
+            properties={"file": edge.file},
+        )
+    return edge
 
 
 class IndexingPipeline:
@@ -89,7 +123,7 @@ class IndexingPipeline:
             self._notify("store_nodes", f"{len(parse_result.nodes)} nodes")
             for node in parse_result.nodes:
                 try:
-                    self.graph.add_node(node)
+                    self.graph.add_node(_to_node_data(node))
                     nodes_created += 1
                 except Exception as e:
                     errors.append(f"add_node failed for {getattr(node, 'id', '?')}: {e}")
@@ -98,7 +132,7 @@ class IndexingPipeline:
             self._notify("store_edges", f"{len(parse_result.edges)} edges")
             for edge in parse_result.edges:
                 try:
-                    self.graph.add_edge(edge)
+                    self.graph.add_edge(_to_edge_data(edge))
                     edges_created += 1
                 except Exception as e:
                     errors.append(f"add_edge failed for edge: {e}")

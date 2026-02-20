@@ -149,6 +149,8 @@ fn extract_python_class(
     let body = node.child_by_field_name("body");
     let docstring = body.as_ref().and_then(|b| extract_python_docstring(b, source));
 
+    let source_text = node_text(node, source).to_string();
+
     nodes.push(CodeNode {
         id: class_id.clone(),
         kind: NodeKind::Class,
@@ -161,7 +163,7 @@ fn extract_python_class(
         signature: None,
         type_hint: None,
         scope: None,
-        source: None,
+        source: Some(source_text),
         alias: None,
         visibility: None,
         is_async: false,
@@ -265,6 +267,8 @@ fn extract_python_function(
         None
     };
 
+    let source_text = node_text(node, source).to_string();
+
     nodes.push(CodeNode {
         id: node_id.clone(),
         kind,
@@ -277,7 +281,7 @@ fn extract_python_function(
         signature,
         type_hint: None,
         scope: None,
-        source: None,
+        source: Some(source_text),
         alias: None,
         visibility,
         is_async,
@@ -363,6 +367,8 @@ fn extract_python_variable(
     let type_hint = node.child_by_field_name("type")
         .map(|t| node_text(&t, source).to_string());
 
+    let source_text = node_text(node, source).to_string();
+
     nodes.push(CodeNode {
         id: var_id.clone(),
         kind: NodeKind::Variable,
@@ -375,7 +381,7 @@ fn extract_python_variable(
         signature: None,
         type_hint,
         scope: Some(scope.to_string()),
-        source: None,
+        source: Some(source_text),
         alias: None,
         visibility: None,
         is_async: false,
@@ -416,6 +422,8 @@ fn extract_typescript_nodes(
                 let line_end = child.end_position().row + 1;
                 let class_id = make_id(file_path, "class", &name, line_start);
 
+                let class_source = node_text(&child, source).to_string();
+
                 nodes.push(CodeNode {
                     id: class_id.clone(),
                     kind: NodeKind::Class,
@@ -428,7 +436,7 @@ fn extract_typescript_nodes(
                     signature: None,
                     type_hint: None,
                     scope: None,
-                    source: None,
+                    source: Some(class_source),
                     alias: None,
                     visibility: None,
                     is_async: false,
@@ -452,6 +460,7 @@ fn extract_typescript_nodes(
                                 let mls = member.start_position().row + 1;
                                 let mle = member.end_position().row + 1;
                                 let mid = make_id(file_path, "method", &mname, mls);
+                                let method_source = node_text(&member, source).to_string();
 
                                 nodes.push(CodeNode {
                                     id: mid.clone(),
@@ -465,7 +474,7 @@ fn extract_typescript_nodes(
                                     signature: None,
                                     type_hint: None,
                                     scope: None,
-                                    source: None,
+                                    source: Some(method_source),
                                     alias: None,
                                     visibility: Some("public".to_string()),
                                     is_async: false,
@@ -493,6 +502,8 @@ fn extract_typescript_nodes(
                 let line_end = child.end_position().row + 1;
                 let func_id = make_id(file_path, "func", &name, line_start);
 
+                let func_source = node_text(&child, source).to_string();
+
                 nodes.push(CodeNode {
                     id: func_id.clone(),
                     kind: NodeKind::Function,
@@ -505,7 +516,7 @@ fn extract_typescript_nodes(
                     signature: None,
                     type_hint: None,
                     scope: None,
-                    source: None,
+                    source: Some(func_source),
                     alias: None,
                     visibility: None,
                     is_async: false,
@@ -529,6 +540,8 @@ fn extract_typescript_nodes(
                 let line_end = child.end_position().row + 1;
                 let iface_id = make_id(file_path, "iface", &name, line_start);
 
+                let iface_source = node_text(&child, source).to_string();
+
                 nodes.push(CodeNode {
                     id: iface_id.clone(),
                     kind: NodeKind::Interface,
@@ -541,7 +554,7 @@ fn extract_typescript_nodes(
                     signature: None,
                     type_hint: None,
                     scope: None,
-                    source: None,
+                    source: Some(iface_source),
                     alias: None,
                     visibility: None,
                     is_async: false,
@@ -626,6 +639,8 @@ fn extract_rust_nodes(
                     if src_slice.starts_with("pub ") { Some("pub".to_string()) } else { None }
                 };
 
+                let func_source = node_text(&child, source).to_string();
+
                 nodes.push(CodeNode {
                     id: func_id.clone(),
                     kind: NodeKind::Function,
@@ -638,7 +653,7 @@ fn extract_rust_nodes(
                     signature: None,
                     type_hint: None,
                     scope: None,
-                    source: None,
+                    source: Some(func_source),
                     alias: None,
                     visibility: vis,
                     is_async: false,
@@ -662,6 +677,8 @@ fn extract_rust_nodes(
                 let line_end = child.end_position().row + 1;
                 let struct_id = make_id(file_path, "class", &name, line_start);
 
+                let struct_source = node_text(&child, source).to_string();
+
                 nodes.push(CodeNode {
                     id: struct_id.clone(),
                     kind: NodeKind::Class,
@@ -674,7 +691,7 @@ fn extract_rust_nodes(
                     signature: None,
                     type_hint: None,
                     scope: None,
-                    source: None,
+                    source: Some(struct_source),
                     alias: None,
                     visibility: None,
                     is_async: false,
@@ -698,6 +715,8 @@ fn extract_rust_nodes(
                 let line_end = child.end_position().row + 1;
                 let trait_id = make_id(file_path, "iface", &name, line_start);
 
+                let trait_source = node_text(&child, source).to_string();
+
                 nodes.push(CodeNode {
                     id: trait_id.clone(),
                     kind: NodeKind::Interface,
@@ -710,7 +729,7 @@ fn extract_rust_nodes(
                     signature: None,
                     type_hint: None,
                     scope: None,
-                    source: None,
+                    source: Some(trait_source),
                     alias: None,
                     visibility: None,
                     is_async: false,
@@ -749,6 +768,8 @@ fn extract_rust_nodes(
                                         }
                                     };
 
+                                    let method_source = node_text(&member, source).to_string();
+
                                     nodes.push(CodeNode {
                                         id: mid.clone(),
                                         kind: NodeKind::Method,
@@ -761,7 +782,7 @@ fn extract_rust_nodes(
                                         signature: None,
                                         type_hint: None,
                                         scope: None,
-                                        source: None,
+                                        source: Some(method_source),
                                         alias: None,
                                         visibility: vis,
                                         is_async: false,

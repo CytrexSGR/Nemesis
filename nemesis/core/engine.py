@@ -155,6 +155,9 @@ class NemesisEngine:
         )
         self._embedder = SyncEmbeddingWrapper(raw_embedder)
 
+        # Initialize vector store with embedding dimensions
+        self._vector_store.initialize(raw_embedder.dimensions)
+
         # Parser
         self._parser = ParserBridge()
 

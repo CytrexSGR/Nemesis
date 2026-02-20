@@ -52,6 +52,21 @@ class CodeNode:
     is_async: bool = False
     parent_class: str | None = None
 
+    @property
+    def node_type(self) -> str:
+        """Alias for kind — used by chunker and other consumers."""
+        return self.kind
+
+    @property
+    def start_line(self) -> int:
+        """Alias for line_start — used by chunker."""
+        return self.line_start
+
+    @property
+    def end_line(self) -> int:
+        """Alias for line_end — used by chunker."""
+        return self.line_end
+
     @classmethod
     def from_dict(cls, data: dict) -> CodeNode:
         """Create a CodeNode from a dictionary (e.g. from JSON)."""
@@ -83,6 +98,11 @@ class CodeEdge:
     target_id: str
     kind: str
     file: str
+
+    @property
+    def edge_type(self) -> str:
+        """Alias for kind — used by graph adapter consumers."""
+        return self.kind
 
     @classmethod
     def from_dict(cls, data: dict) -> CodeEdge:

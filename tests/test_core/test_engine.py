@@ -337,8 +337,8 @@ class TestNemesisEngine:
     ):
         """Calling initialize() twice is idempotent -- no second setup."""
         mock_graph_adapter.return_value = MagicMock()
-        mock_vector_store.return_value = MagicMock()
-        mock_embed_provider.return_value = MagicMock()
+        mock_vector_store.return_value = AsyncMock()
+        mock_embed_provider.return_value = AsyncMock()
 
         engine = NemesisEngine()
         engine.initialize()
