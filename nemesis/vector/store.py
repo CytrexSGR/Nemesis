@@ -24,12 +24,14 @@ class SearchResult:
         text: Original text content of the chunk.
         score: Similarity score (higher = more similar).
         metadata: Additional metadata stored with the vector.
+        project_id: Project this vector belongs to.
     """
 
     id: str
     text: str
     score: float
     metadata: dict[str, Any] = field(default_factory=dict)
+    project_id: str = ""
 
 
 # LanceDB table name
@@ -89,6 +91,7 @@ class VectorStore:
                 pa.field("text", pa.utf8()),
                 pa.field("vector", pa.list_(pa.float32(), list_size=dimensions)),
                 pa.field("metadata", pa.utf8()),  # JSON-encoded
+                pa.field("project_id", pa.utf8()),
             ]
         )
 
@@ -126,6 +129,7 @@ class VectorStore:
         texts: list[str],
         embeddings: list[list[float]],
         metadata: list[dict[str, Any]],
+        project_id: str = "",
     ) -> None:
         """Add vectors with their texts and metadata to the store.
 
@@ -134,6 +138,7 @@ class VectorStore:
             texts: Original text content for each vector.
             embeddings: Embedding vectors.
             metadata: Metadata dicts for each vector.
+            project_id: Project identifier for filtering.
 
         Raises:
             ValueError: If input lists have different lengths.
@@ -158,6 +163,7 @@ class VectorStore:
                 "text": text,
                 "vector": embedding,
                 "metadata": json.dumps(metadata_item),
+                "project_id": project_id,
             }
             for id_, text, embedding, metadata_item in zip(
                 ids, texts, embeddings, metadata, strict=True
@@ -172,6 +178,7 @@ class VectorStore:
         query_embedding: list[float],
         limit: int = 10,
         filter: dict[str, Any] | None = None,
+        project_id: str | None = None,
     ) -> list[SearchResult]:
         """Search for the most similar vectors.
 
@@ -181,6 +188,8 @@ class VectorStore:
             filter: Optional metadata filter. Keys are metadata field names,
                     values are exact-match values. Filters are applied as
                     SQL LIKE clauses on the JSON metadata column.
+            project_id: Optional project filter. When set, only vectors
+                        belonging to this project are returned.
 
         Returns:
             List of SearchResult ordered by similarity (best first).
@@ -196,15 +205,21 @@ class VectorStore:
         def _search() -> list[dict]:
             query = self._table.search(query_embedding).limit(limit)
 
+            conditions = []
+
             if filter:
                 # Build a WHERE clause that filters on the JSON metadata string.
                 # Each key-value pair is matched as a substring in the JSON.
-                conditions = []
                 for key, value in filter.items():
                     # json.dumps handles proper quoting for strings and numbers
                     json_fragment = f'"{key}": {json.dumps(value)}'
                     escaped = json_fragment.replace("'", "''")
                     conditions.append(f"metadata LIKE '%{escaped}%'")
+
+            if project_id is not None:
+                conditions.append(f"project_id = '{project_id}'")
+
+            if conditions:
                 where_clause = " AND ".join(conditions)
                 query = query.where(where_clause)
 
@@ -221,6 +236,7 @@ class VectorStore:
                     text=row["text"],
                     score=float(1.0 - row.get("_distance", 0.0)),
                     metadata=meta,
+                    project_id=row.get("project_id", ""),
                 )
             )
 
@@ -244,6 +260,19 @@ class VectorStore:
         where = f"id IN ({id_list})"
 
         await loop.run_in_executor(None, lambda: self._table.delete(where))
+
+    async def delete_by_project(self, project_id: str) -> None:
+        """Delete all vectors belonging to a specific project.
+
+        Args:
+            project_id: The project identifier to match.
+        """
+        self._require_initialized()
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, lambda: self._table.delete(f"project_id = '{project_id}'")
+        )
 
     async def delete_by_file(self, file_path: str) -> None:
         """Delete all vectors associated with a specific file.

@@ -11,6 +11,9 @@ from nemesis.vector.store import SearchResult, VectorStore
 if TYPE_CHECKING:
     from pathlib import Path
 
+# Embedding dimensionality used across project-id tests
+DIMS = 3
+
 
 class TestSearchResult:
     """Tests for the SearchResult data model."""
@@ -339,3 +342,50 @@ class TestVectorStoreDelete:
         )
         count = await populated_store.count()
         assert count == 1
+
+
+class TestVectorStoreProjectId:
+    """Tests for project_id filtering in VectorStore."""
+
+    @pytest.fixture
+    async def store(self, tmp_path: Path) -> VectorStore:
+        """Create and initialize a VectorStore for testing."""
+        s = VectorStore(path=str(tmp_path / "vectors"))
+        await s.initialize(dimensions=DIMS)
+        yield s
+        await s.close()
+
+    @pytest.mark.asyncio
+    async def test_add_with_project_id(self, store: VectorStore) -> None:
+        await store.add(
+            ids=["id1"],
+            texts=["hello world"],
+            embeddings=[[0.1] * DIMS],
+            metadata=[{"file": "a.py"}],
+            project_id="eve",
+        )
+        results = await store.search([0.1] * DIMS, limit=10)
+        assert len(results) == 1
+        assert results[0].project_id == "eve"
+
+    @pytest.mark.asyncio
+    async def test_search_filters_by_project(self, store: VectorStore) -> None:
+        await store.add(["id1"], ["hello"], [[0.1] * DIMS], [{}], project_id="eve")
+        await store.add(["id2"], ["world"], [[0.1] * DIMS], [{}], project_id="nemesis")
+        eve_results = await store.search([0.1] * DIMS, limit=10, project_id="eve")
+        assert all(r.project_id == "eve" for r in eve_results)
+        assert len(eve_results) == 1
+
+    @pytest.mark.asyncio
+    async def test_search_all_projects_when_no_filter(self, store: VectorStore) -> None:
+        await store.add(["id1"], ["hello"], [[0.1] * DIMS], [{}], project_id="eve")
+        await store.add(["id2"], ["world"], [[0.1] * DIMS], [{}], project_id="nemesis")
+        all_results = await store.search([0.1] * DIMS, limit=10)
+        assert len(all_results) == 2
+
+    @pytest.mark.asyncio
+    async def test_delete_by_project(self, store: VectorStore) -> None:
+        await store.add(["id1"], ["hello"], [[0.1] * DIMS], [{}], project_id="eve")
+        await store.add(["id2"], ["world"], [[0.1] * DIMS], [{}], project_id="nemesis")
+        await store.delete_by_project("eve")
+        assert await store.count() == 1

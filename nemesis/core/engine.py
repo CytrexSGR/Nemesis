@@ -62,9 +62,10 @@ class SyncVectorStoreWrapper:
         texts: list[str],
         embeddings: list[list[float]],
         metadata: list[dict[str, Any]],
+        project_id: str = "",
     ) -> None:
         return self._get_loop().run_until_complete(
-            self._store.add(ids, texts, embeddings, metadata)
+            self._store.add(ids, texts, embeddings, metadata, project_id=project_id)
         )
 
     def search(
@@ -72,13 +73,17 @@ class SyncVectorStoreWrapper:
         query_vector: list[float],
         limit: int = 10,
         filter_metadata: dict[str, Any] | None = None,
+        project_id: str | None = None,
     ) -> list[Any]:
         return self._get_loop().run_until_complete(
-            self._store.search(query_vector, limit, filter_metadata)
+            self._store.search(query_vector, limit, filter_metadata, project_id=project_id)
         )
 
     def delete(self, ids: list[str]) -> None:
         return self._get_loop().run_until_complete(self._store.delete(ids))
+
+    def delete_by_project(self, project_id: str) -> None:
+        return self._get_loop().run_until_complete(self._store.delete_by_project(project_id))
 
     def delete_by_file(self, file_path: str) -> None:
         return self._get_loop().run_until_complete(self._store.delete_by_file(file_path))

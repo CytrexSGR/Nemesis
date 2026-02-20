@@ -80,7 +80,7 @@ class TestSyncVectorStoreWrapper:
         metadata = [{"file": "test.py"}]
         wrapper.add(ids, texts, embeddings, metadata)
 
-        mock_store.add.assert_awaited_once_with(ids, texts, embeddings, metadata)
+        mock_store.add.assert_awaited_once_with(ids, texts, embeddings, metadata, project_id="")
         wrapper.close()
 
     def test_search_calls_async_store(self):
@@ -91,7 +91,7 @@ class TestSyncVectorStoreWrapper:
 
         result = wrapper.search([0.1, 0.2], limit=5)
 
-        mock_store.search.assert_awaited_once_with([0.1, 0.2], 5, None)
+        mock_store.search.assert_awaited_once_with([0.1, 0.2], 5, None, project_id=None)
         assert result == []
         wrapper.close()
 
