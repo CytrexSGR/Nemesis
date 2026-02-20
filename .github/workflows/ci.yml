@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  PYTHON_VERSION: "3.11"
+  RUST_VERSION: "stable"
+
+jobs:
+  lint:
+    name: Lint (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install ruff
+        run: pip install ruff>=0.4
+      - name: Ruff check
+        run: ruff check nemesis/ tests/
+      - name: Ruff format check
+        run: ruff format --check nemesis/ tests/
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pydantic pydantic-settings click pytest pytest-asyncio pytest-cov
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -v --tb=short --cov=nemesis --cov-report=term-missing
+      - name: Upload coverage
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: .coverage
+
+  rust-check:
+    name: Rust Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "nemesis-parse -> target"
+      - name: Cargo check
+        working-directory: nemesis-parse
+        run: cargo check
+      - name: Cargo test
+        working-directory: nemesis-parse
+        run: cargo test
+      - name: Cargo clippy
+        working-directory: nemesis-parse
+        run: cargo clippy -- -D warnings
+
+  build-wheel:
+    name: Build Wheel (maturin)
+    runs-on: ubuntu-latest
+    needs: [rust-check]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install maturin
+        run: pip install maturin>=1.5
+      - name: Build wheel
+        working-directory: nemesis-parse
+        run: maturin build --release
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: nemesis-parse/target/wheels/*.whl
