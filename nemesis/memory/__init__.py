@@ -1,1 +1,1 @@
-"""Memory module — rules, decisions, context, auto-learning."""
+"""Memory module — rules, decisions, conventions, auto-learn."""
